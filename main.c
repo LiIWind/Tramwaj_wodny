@@ -1,5 +1,13 @@
 #include "common.h"
 
+//funkcja pomocnicza
+void ustaw_semafor(int semid, int sem_num, int val) {
+    if (semctl(semid, sem_num, SETVAL, val) == -1) {
+        perror("Blad ustawiania wartosci semafora");
+        exit(1);
+    }
+}
+
 int main(){
 	printf("Start systemu tramwaju wodnego oraz tworzenie zasobow\n");
 
@@ -33,6 +41,20 @@ int main(){
 	printf("Pamiec gotowa (ID: %d), stan: 0 pasazerow.\n",shmid);
 	shmdt(wspolne); //odlaczenie pamieci maina
 
+	//tworzy zestaw 3 semaforow dla mostka statku i dostepu
+	int semid = semget(key, LICZBA_SEM, 0666 | IPC_CREAT);
+	if (semid == -1){
+		perror("Blad semget");
+		exit(1);
+	}
+
+	//ustawienie limitow
+	ustaw_semafor(semid, SEM_MOSTEK, K); //max K osob na mostku
+	ustaw_semafor(semid, SEM_STATEK, N); //max N osob na statku
+	ustaw_semafor(semid, SEM_DOSTEP, 1); //tylko 1 proces edytuje pamiec
+
+	printf("Semafory gotowe ID: %d, mostek: %d, statek: %d\n", semid, K, N);
+
 	//uruchomienie procesow
 	pid_t pid_kapitan = fork();
 	if (pid_kapitan == 0) {
@@ -50,13 +72,32 @@ int main(){
                 exit(1);
         }
 
+	//generowanie pasazerow
+	int liczba_pasazerow = 15;
+	for (int i=0; i<liczba_pasazerow; i++){
+		usleep(500000);//0.5 sekundy
+		if(fork()==0){
+			//proces potomny zamienia sie w pasazera
+			execl("./pasazer", "pasazer", NULL);
+			perror("Blad uruchomienia pasazera");
+			exit(1);
+		}
+	}
+
 	wait(NULL);
 	wait(NULL);
+
+	sleep(2);
+	kill(0, SIGTERM);
 
 	//Sprzatanie
 	printf("Czyszczenie zasobow\n");
 	if (shmctl(shmid, IPC_RMID, NULL) == -1){
 		perror("Blad usuwania pamieci");
+	}
+
+	if (semctl(semid, 0, IPC_RMID) == -1){
+		perror("Blad usuwania semaforow");
 	}
 
 	printf("Koniec symulacji\n");

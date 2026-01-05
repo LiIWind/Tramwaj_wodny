@@ -7,21 +7,28 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ipc.h>
+#include <sys/sem.h>
 #include <sys/shm.h>
 #include <errno.h>
+#include <time.h>
 
 
 
 // Parametry do zadania
 #define N 10 //pojemnosc statku
 #define M 3 //miejsca na rowery
-#define K 5 //pojemnosc mostka
+#define K 3 //pojemnosc mostka
 #define T1 2 //czas oczekiwania w sekundach
 #define T2 3 //czas rejsu w sekundach
 #define R 5  //limit rejsow
 
 #define PROJECT_ID 'T'
 #define PATH_NAME "."
+
+#define SEM_MOSTEK 0
+#define SEM_STATEK 1
+#define SEM_DOSTEP 2
+#define LICZBA_SEM 3
 
 typedef struct {
 	int pasazerowie_statek; //aktualnie pasazerow na statku
@@ -30,5 +37,29 @@ typedef struct {
 	int czy_plynie; // 0 - w porcie, 1 - plynie
 	int liczba_rejsow; //licznik rejsow
 } StanStatku;
+
+
+//funkcje pomocnicze
+static inline int zajmij_zasob(int semid, int sem_num){
+	struct sembuf operacja = {sem_num, -1, 0}; //zmniejszenie licznika np. wchodzac na mostek zmniejsza sie miejsce na mostku, jak jest 0 to czeka
+	if (semop(semid, &operacja, 1) == -1){
+		if(errno != EINTR) return -1; //jesli przerwano sygnalem 
+
+		if(errno == EIDRM || errno == EINVAL) return -1; //jesli usunieto semafor
+
+		perror("Blad zajmowania semafora");
+		return -1;
+	}
+	return 0;
+}
+
+static inline int zwolnij_zasob(int semid, int sem_num){
+        struct sembuf operacja = {sem_num, 1, 0}; //zwiekszenie licznika
+        if (semop(semid, &operacja, 1) == -1){
+                perror("Blad zwalniania semafora");
+		return -1;
+        }
+	return 0;
+}
 
 #endif
