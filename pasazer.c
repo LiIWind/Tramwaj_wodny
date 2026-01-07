@@ -18,6 +18,20 @@ int main(){
 		return 1;
 	}
 
+	while (1){
+		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) return 0;
+		int stan_statku = wspolne->czy_plynie;
+		int liczba_ludzi = wspolne->pasazerowie_statek;
+		zwolnij_zasob(semid, SEM_DOSTEP);
+
+		if(stan_statku == 1 || liczba_ludzi >= N){
+			sleep(1);
+		}
+		else{
+			break;
+		}
+	}
+
 	//proba wejscia na mostek, jesli SEM_MOSTEK == 0 to tu sie zatrzyma
 	if(zajmij_zasob(semid, SEM_MOSTEK) == -1) return 0;
 
@@ -39,10 +53,17 @@ int main(){
 
 	zwolnij_zasob(semid, SEM_MOSTEK); //zwolnienie miejsca na mostku
 
-	//Oczekiwanie na koniec rejsu
-	sleep(3);
+	sleep(T1 + T2 + 2);
 
-	//Zejscie ze statku
+	//zejscie ze statku
+	if(zajmij_zasob(semid, SEM_DOSTEP) == -1) return 0;
+
+	wspolne->pasazerowie_statek--;
+	printf("Pasazer %d schodzi, na statku zostalo %d pasazerow\n", pid, wspolne->pasazerowie_statek);
+
+	zwolnij_zasob(semid, SEM_DOSTEP);
+
+	zwolnij_zasob(semid, SEM_STATEK);
 
 	shmdt(wspolne);
 	return 0;

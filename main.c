@@ -84,8 +84,8 @@ int main(){
 		}
 	}
 
-	wait(NULL);
-	wait(NULL);
+	waitpid(pid_kapitan, NULL, 0);
+	waitpid(pid_dyspozytor, NULL, 0);
 
 	sleep(2);
 	kill(0, SIGTERM);

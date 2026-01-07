@@ -20,7 +20,7 @@
 #define K 3 //pojemnosc mostka
 #define T1 2 //czas oczekiwania w sekundach
 #define T2 3 //czas rejsu w sekundach
-#define R 5  //limit rejsow
+#define R 2  //limit rejsow
 
 #define PROJECT_ID 'T'
 #define PATH_NAME "."
