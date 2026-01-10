@@ -25,7 +25,7 @@ int main(){
 		zwolnij_zasob(semid, SEM_DOSTEP);
 
 		if(stan_statku == 1 || liczba_ludzi >= N){
-			sleep(1);
+			usleep(100000);;
 		}
 		else{
 			break;
