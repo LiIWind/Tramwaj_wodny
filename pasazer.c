@@ -106,6 +106,8 @@ int main(){
 
 	zwolnij_zasob(semid, SEM_DOSTEP);
 
+	usleep(500000);
+
 	//sprawdzenie czy statek nie odplynal
 	if (zajmij_zasob(semid, SEM_DOSTEP) == -1) {
         	zwolnij_zasob(semid, SEM_MOSTEK);
