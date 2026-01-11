@@ -1,7 +1,7 @@
 #include "common.h"
 
-volatile int koniec_pracy = 0;
-volatile int wymuszone_wyplyniecie = 0;
+volatile sig_atomic_t koniec_pracy = 0;
+volatile sig_atomic_t wymuszone_wyplyniecie = 0;
 
 void obsluga_sygnalow(int sig){
 	if (sig == SIGUSR1){
@@ -12,23 +12,43 @@ void obsluga_sygnalow(int sig){
 		printf("Kapitan otrzymal rozkaz do zakonczenia pracy\n");
 		koniec_pracy = 1;
 	}
+	else if (sig == SIGTERM){
+		koniec_pracy =1;
+	}
 }
 
 int main(){
 	printf("Kapitan gotowy do pracy. PID: %d\n", getpid());
 
-	signal(SIGUSR1, obsluga_sygnalow);
-	signal(SIGUSR2, obsluga_sygnalow);
+	struct sigaction sa;
+	sa.sa_handler = obsluga_sygnalow;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
 
-	//maska blokuje SIGUSR1(wyplyn) ale puszcz SIGUSR2 (koniec)
-	sigset_t maska;
+	if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        	perror("Blad sigaction SIGUSR1");
+        	exit(1);
+    	}
+    	if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+        	perror("Blad sigaction SIGUSR2");
+        	exit(1);
+    	}
+    	if (sigaction(SIGTERM, &sa, NULL) == -1) {
+        	perror("Blad sigaction SIGTERM");
+        	exit(1);
+    	}
+
+	//maska blokuje SIGUSR1(wyplyn)
+	sigset_t maska, stara_maska;
 	sigemptyset(&maska);
 	sigaddset(&maska, SIGUSR1);
-	//blokuje na starcie, odblokuje w fazie zaladunku
-	sigprocmask(SIG_BLOCK, &maska, NULL);
 
 	//pobranie tego samego klucza co main
 	key_t key = ftok(PATH_NAME, PROJECT_ID);
+	if(key == -1){
+		perror("Kapitan - blad ftok");
+		exit(1);
+	}
 
 	//pobranie ID pamieci
 	int shmid = shmget(key, sizeof(StanStatku), 0666);
@@ -42,44 +62,67 @@ int main(){
 
 	//Podlaczenie kapitana
 	StanStatku *statek = (StanStatku*) shmat(shmid, NULL, 0);
+	if(statek == (void*)-1){
+		perror("Kapitan - blad shmat");
+		exit(1);
+	}
+
+	if(zajmij_zasob(semid, SEM_DOSTEP) == -1){
+		shmdt(statek);
+		exit(1);
+	}
 
 	statek->pid_kapitan = getpid();
-	statek->status_kapitana = 0;
+	statek->status_kapitana = 1; //w porcie
+	zwolnij_zasob(semid, SEM_DOSTEP);
 
 	//Test - odczytanie wartosci ustawionych przez maina
-	printf("Kapitan - Stan pasazerow: %d, Stan rejsow, %d\n", statek->pasazerowie_statek, statek->liczba_rejsow);
+	printf("Kapitan - Stan pasazerow: %d, Stan rejsow: %d, maksymalnie rejsow: %d\n", statek->pasazerowie_statek, statek->liczba_rejsow, R);
 
-	while(statek->liczba_rejsow < R && koniec_pracy == 0){
-		printf("Kapitan zaczyna zaladunek do rejsu nr %d\n", statek->liczba_rejsow + 1);
+	while(1){
+		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
+		int rejsy = statek->liczba_rejsow;
+		zwolnij_zasob(semid, SEM_DOSTEP);
+
+		if(rejsy>=R || koniec_pracy){
+			break;
+		}
+
+		printf("Kapitan zaczyna zaladunek do rejsu nr %d/%d\n", statek->liczba_rejsow + 1, R);
 
 		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
 		statek->czy_plynie = 0;
 		statek->status_kapitana = 1;
-
+		statek->kierunek_mostka = KIERUNEK_NA_STATEK;
 		zwolnij_zasob(semid, SEM_DOSTEP);
 
 		wymuszone_wyplyniecie = 0;
 
-		sigprocmask(SIG_UNBLOCK, &maska, NULL);
+		//Odblokowanie SIGUSR1 podczas zaladunku
+		sigprocmask(SIG_UNBLOCK, &maska, &stara_maska);
 
-		if (wymuszone_wyplyniecie == 0){
+		if (!wymuszone_wyplyniecie){
 			sleep(T1);//oczekiwanie na pasazerow
 		} else {
-			printf("Wymuszone wyplyniecie pasazerowie maja 1 sekunde na wejscie\n");
+			printf("Wymuszone wyplyniecie\n");
 			sleep(1);
 		}
 
-		sigprocmask(SIG_BLOCK, &maska, NULL);
+		//blokowania SIGUSR1 podczas rejsu
+		sigprocmask(SIG_SETMASK, &stara_maska, NULL);
 
-		if(zajmij_zasob(semid, SEM_DOSTEP) != -1){
-			statek->status_kapitana = 0;
-			zwolnij_zasob(semid, SEM_DOSTEP);
-		}
-
-		if (koniec_pracy == 1){
+		if (koniec_pracy){
 			printf("Kapitan odwoluje rejs i wysadza pasazerow\n");
+			if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
 			statek->czy_plynie = 1;
-			goto ROZLADUNEK;
+			int pasazerow = statek->pasazerowie_statek;
+			zwolnij_zasob(semid, SEM_DOSTEP);
+
+			if(pasazerow > 0){
+				printf("Kapitan wysadza %d pasazerow i konczy prace\n", pasazerow);
+				goto ROZLADUNEK;
+			}
+			break;
 		}
 
 		//Sprawdzenie mostka
@@ -89,52 +132,57 @@ int main(){
 		}
 
 		statek->czy_plynie = 1;
-		printf("Kapitan odplywa, liczba pasazerow: %d, czas rejsu %ds\n", statek->pasazerowie_statek, T2);
-
+		statek->status_kapitana = 0;
+		statek->kierunek_mostka = KIERUNEK_BRAK;
+		int pasazerow = statek->pasazerowie_statek;
+		int rowerow = statek->rowery_statek;
 		zwolnij_zasob(semid, SEM_DOSTEP);
+
+		printf("Kapitan odplywa, liczba pasazerow: %d, liczba rowerow: %d, czas rejsu %ds\n", pasazerow, rowerow, T2);
 
 		sleep(T2);
 
 		printf("Kapitan doplynal do celu, pasazerowie opusczaja statek\n");
 
-		ROZLADUNEK:
+ROZLADUNEK:
+		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
+		statek->kierunek_mostka = KIERUNEK_ZE_STATKU;
+		zwolnij_zasob(semid, SEM_DOSTEP);
+
 		while(1){
 			if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-
-			int ilosc_ludzi = statek->pasazerowie_statek;
-
+			int pozostalo = statek->pasazerowie_statek;
 			zwolnij_zasob(semid, SEM_DOSTEP);
 
-			if(ilosc_ludzi > 0){
-				usleep(500000); //0.5s
-			}else{
-				break;
-			}
+			if(pozostalo == 0) break;
+
+			usleep(100000);
 		}
+		printf("Statek pusty\n");
 
 		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-
 		statek->liczba_rejsow++;
+		statek->kierunek_mostka = KIERUNEK_BRAK;
+		zwolnij_zasob(semid, SEM_DOSTEP);
 
-		if (koniec_pracy == 1){
-			printf("Statek pusty, koniec pracy\n");
-			zwolnij_zasob(semid, SEM_DOSTEP);
+		if (koniec_pracy){
+			printf("Kapitan konczy prace po %d rejsach\n", statek->liczba_rejsow);
 			break;
 		}
 
-		if(statek->liczba_rejsow < R){
-			printf("Statek pusty, nowi pasazerowie moga wchodzic\n");
-		}else{
-			printf("Statek pusty, to byl ostatni rejs\n");
+		if(statek->liczba_rejsow >= R){
+			printf("Kapitan wykonal maksymalna liczbe rejsow\n");
+			break;
 		}
-
-		zwolnij_zasob(semid, SEM_DOSTEP);
-
+		printf("Kapitan - Rejs %d zakonczony, kolejni pasazerowie moga wchodzic\n", statek->liczba_rejsow);
 		sleep(2);
 	}
 
 
-	//odlaczenie przed koncem
+	if(zajmij_zasob(semid, SEM_DOSTEP) != -1){
+		statek->koniec_symulacji = 1;
+		zwolnij_zasob(semid, SEM_DOSTEP);
+	}
 	shmdt(statek);
 	printf("Kapitan konczy zmiane. \n");
 	return 0;

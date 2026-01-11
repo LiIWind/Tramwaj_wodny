@@ -11,6 +11,17 @@ void ustaw_semafor(int semid, int sem_num, int val) {
 int main(){
 	printf("Start systemu tramwaju wodnego oraz tworzenie zasobow\n");
 
+	//walidacja parametrow
+	if (K >= N){
+		printf("Blad, pojemnosc mostka K musi byc mniejsza niz pojemnosc statku N\n");
+		exit(1);
+	}
+
+	if (M >= N){
+                printf("Blad, liczba miejsc na rowery M musi byc mniejsza nic pojemnosc statku\n");
+                exit(1);
+        }
+
 	//unikalny klucz
 	key_t key = ftok(PATH_NAME, PROJECT_ID);
 	if (key == -1){
@@ -37,6 +48,10 @@ int main(){
     	wspolne->pasazerowie_mostek = 0;
 	wspolne->czy_plynie = 0;
 	wspolne->liczba_rejsow = 0;
+	wspolne->kierunek_mostka = KIERUNEK_BRAK;
+	wspolne->status_kapitana = 1; //w porcie
+	wspolne->koniec_symulacji = 0;
+	wspolne->pid_kapitan = 0;
 
 	printf("Pamiec gotowa (ID: %d), stan: 0 pasazerow.\n",shmid);
 	shmdt(wspolne); //odlaczenie pamieci maina
@@ -45,41 +60,69 @@ int main(){
 	int semid = semget(key, LICZBA_SEM, 0666 | IPC_CREAT);
 	if (semid == -1){
 		perror("Blad semget");
+		shmctl(shmid, IPC_RMID, NULL);
 		exit(1);
 	}
 
 	//ustawienie limitow
 	ustaw_semafor(semid, SEM_MOSTEK, K); //max K osob na mostku
-	ustaw_semafor(semid, SEM_STATEK, N); //max N osob na statku
+	ustaw_semafor(semid, SEM_STATEK_LUDZIE, N); //max N osob na statku
+	ustaw_semafor(semid, SEM_STATEK_ROWERY, M);
 	ustaw_semafor(semid, SEM_DOSTEP, 1); //tylko 1 proces edytuje pamiec
+	ustaw_semafor(semid, SEM_KIERUNEK, 1);
 
-	printf("Semafory gotowe ID: %d, mostek: %d, statek: %d\n", semid, K, N);
+	printf("Semafory gotowe ID: %d, mostek: %d, statek ludzie: %d miejsc, statek rowery: %d miejsc\n",
+		semid, K, N, M);
 
 	//uruchomienie procesow
 	pid_t pid_kapitan = fork();
-	if (pid_kapitan == 0) {
-		//proces potomny
-		execl("./kapitan", "kapitan", NULL);
-		perror("Blad uruchomienia kapitana");
+	if(pid_kapitan == -1){
+		perror("Blad fork kapitana");
+		semctl(semid, 0, IPC_RMID);
+		shmctl(semid, IPC_RMID, NULL);
 		exit(1);
 	}
 
+	if (pid_kapitan == 0) {
+		//proces potomny
+		execl("./kapitan", "kapitan", NULL);
+		perror("Blad execl kapitana");
+		exit(1);
+	}
+	sleep(1);
+
 	pid_t pid_dyspozytor = fork();
+	if(pid_dyspozytor == -1){
+                perror("Blad fork dyspozytora");
+		kill(pid_kapitan, SIGTERM);
+                semctl(semid, 0, IPC_RMID);
+                shmctl(shmid, IPC_RMID, NULL);
+                exit(1);
+        }
+
         if (pid_dyspozytor == 0) {
                 //proces potomny
                 execl("./dyspozytor", "dyspozytor", NULL);
-                perror("Blad uruchomienia dyspozytora");
+                perror("Blad execl dyspozytora");
                 exit(1);
         }
 
 	//generowanie pasazerow
-	int liczba_pasazerow = 15;
+	printf("Generowanie pasazerow\n");
+	int liczba_pasazerow = 20;
 	for (int i=0; i<liczba_pasazerow; i++){
-		usleep(500000);//0.5 sekundy
-		if(fork()==0){
+		usleep(800000);//0.8 sekundy
+
+		pid_t pid = fork();
+		if (pid == -1){
+			perror("Blad ftok pasazera");
+			continue;
+		}
+
+		if(pid == 0){
 			//proces potomny zamienia sie w pasazera
 			execl("./pasazer", "pasazer", NULL);
-			perror("Blad uruchomienia pasazera");
+			perror("Blad execl pasazera");
 			exit(1);
 		}
 	}
@@ -89,6 +132,8 @@ int main(){
 
 	sleep(2);
 	kill(0, SIGTERM);
+
+	sleep(1);
 
 	//Sprzatanie
 	printf("Czyszczenie zasobow\n");

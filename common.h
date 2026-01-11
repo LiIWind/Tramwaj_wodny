@@ -25,11 +25,16 @@
 #define PROJECT_ID 'D'
 #define PATH_NAME "."
 
-#define SEM_MOSTEK 0
-#define SEM_STATEK 1
-#define SEM_DOSTEP 2
-#define LICZBA_SEM 3
+#define SEM_MOSTEK 0 //limity mostka
+#define SEM_STATEK_LUDZIE 1 //limit ludzi na statku
+#define SEM_STATEK_ROWERY 2 //limit rowerow na statku
+#define SEM_DOSTEP 3 //mutex do pamieci dzielonej
+#define SEM_KIERUNEK 4 //kontrola kierunku ruchu na mostku
+#define LICZBA_SEM 5
 
+#define KIERUNEK_BRAK 0
+#define KIERUNEK_NA_STATEK 1
+#define KIERUNEK_ZE_STATKU 2
 
 typedef struct {
 	int pasazerowie_statek; //aktualnie pasazerow na statku
@@ -37,8 +42,10 @@ typedef struct {
 	int pasazerowie_mostek; //aktualnie pasazerow na mostku
 	int czy_plynie; // 0 - w porcie, 1 - plynie
 	int liczba_rejsow; //licznik rejsow
+	int kierunek_mostka; //kierunek ruchu na mostku
 	pid_t pid_kapitan;
-	int status_kapitana;
+	int status_kapitana; //0 - rejs, 1- port
+	int koniec_symulacji;
 } StanStatku;
 
 
@@ -46,7 +53,7 @@ typedef struct {
 static inline int zajmij_zasob(int semid, int sem_num){
 	struct sembuf operacja = {sem_num, -1, 0}; //zmniejszenie licznika np. wchodzac na mostek zmniejsza sie miejsce na mostku, jak jest 0 to czeka
 	while (semop(semid, &operacja, 1) == -1){
-		if(errno != EINTR) continue; //jesli przerwano sygnalem 
+		if(errno == EINTR) continue; //jesli przerwano sygnalem 
 
 		if(errno == EIDRM || errno == EINVAL) return -1; //jesli usunieto semafor
 
@@ -65,4 +72,22 @@ static inline int zwolnij_zasob(int semid, int sem_num){
 	return 0;
 }
 
+//proba podjecia zasobu bez blokowania
+static inline int sprobuj_zajac_zasob(int semid, int sem_num) {
+	struct sembuf operacja = {sem_num, -1, IPC_NOWAIT};
+	if (semop(semid, &operacja, 1) == -1){
+		if(errno == EAGAIN) return 0; //zasob zajety
+		if(errno == EIDRM || errno == EINVAL) return -1; //semafor usuniety
+		return -1;
+	}
+	return 1; //sukces
+}
+
+//bezpieczny odczyt z pamieci dzielonej
+static inline int bezpieczny_odczyt_int(int semid, int *zmienna){
+	if (zajmij_zasob(semid, SEM_DOSTEP) == -1) return -1;
+	int wartosc = *zmienna;
+	zwolnij_zasob(semid, SEM_DOSTEP);
+	return wartosc;
+}
 #endif

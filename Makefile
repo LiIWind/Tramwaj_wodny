@@ -17,3 +17,5 @@ pasazer: pasazer.c common.h
 
 clean:
 	rm -f main kapitan dyspozytor pasazer *.o
+	ipcs -m | grep `whoami` | awk '{print $$2}' | xargs -n1 ipcrm -m 2>/dev/null || true
+	ipcs -s | grep `whoami` | awk '{print $$2}' | xargs -n1 ipcrm -s 2>/dev/null || true
