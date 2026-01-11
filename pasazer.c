@@ -7,7 +7,7 @@ int main(){
 	srand(time(NULL) ^ pid);
 	int ma_rower = (rand() % 100) < 30;
 
-	printf("Pasazer przybyl do portu pid: %d%s", pid, ma_rower ? " z rowerem\n" : "");
+	printf("Pasazer przybyl do portu pid: %d%s", pid, ma_rower ? " z rowerem\n" : "\n");
 
 	//podlaczenie do zasobow
 	key_t key = ftok(PATH_NAME, PROJECT_ID);
@@ -83,31 +83,28 @@ int main(){
 		return 0;
 	}
 
+	if(ma_rower){
+		if(zajmij_zasob(semid, SEM_MOSTEK) == -1){
+			zwolnij_zasob(semid, SEM_MOSTEK);
+			shmdt(wspolne);
+			return 0;
+		}
+	}
+
 	//zajecie miejsca na mostku
 	if (zajmij_zasob(semid, SEM_DOSTEP) == -1) {
         	zwolnij_zasob(semid, SEM_MOSTEK);
+		if(ma_rower) zwolnij_zasob(semid, SEM_MOSTEK);
         	shmdt(wspolne);
         	return 0;
     	}
 
-	wspolne->pasazerowie_mostek++; //wejscie na mostek
 	int miejsca_mostek = ma_rower ? 2 : 1; //rower zajmuje 2 miejsca
-	printf("Pasazer (%d) wszedl na mostek (zajmuje %d miejsc, mostek: %d/%d)\n", pid, miejsca_mostek, wspolne->pasazerowie_mostek, K);
+	wspolne->pasazerowie_mostek += miejsca_mostek;
+	printf("Pasazer (%d) wszedl na mostek (zajmuje %d miejsc, mostek: %d/%d)\n",
+		pid, miejsca_mostek, wspolne->pasazerowie_mostek, K);
 
 	zwolnij_zasob(semid, SEM_DOSTEP);
-
-	//z rowerem zajmuje 2 miejsca
-	if (ma_rower) {
-        	if (zajmij_zasob(semid, SEM_MOSTEK) == -1) {
-                	if (zajmij_zasob(semid, SEM_DOSTEP) != -1) {
-                		wspolne->pasazerowie_mostek--;
-                		zwolnij_zasob(semid, SEM_DOSTEP);
-            		}
-            		zwolnij_zasob(semid, SEM_MOSTEK);
-            		shmdt(wspolne);
-            		return 0;
-        	}
-    	}
 
 	//sprawdzenie czy statek nie odplynal
 	if (zajmij_zasob(semid, SEM_DOSTEP) == -1) {
@@ -124,7 +121,7 @@ int main(){
 		printf("Pasazer (%d) - statek odplynal schodzi z mostka\n", pid);
 
 		if (zajmij_zasob(semid, SEM_DOSTEP) != -1) {
-            		wspolne->pasazerowie_mostek--;
+            		wspolne->pasazerowie_mostek -= miejsca_mostek;
 			zwolnij_zasob(semid, SEM_DOSTEP);
         	}
 
@@ -137,7 +134,7 @@ int main(){
 	//rezerwacja miejsca
 	if (zajmij_zasob(semid, SEM_STATEK_LUDZIE) == -1) {
 		if (zajmij_zasob(semid, SEM_DOSTEP) != -1) {
-			wspolne->pasazerowie_mostek++;
+			wspolne->pasazerowie_mostek -= miejsca_mostek;
 			zwolnij_zasob(semid, SEM_DOSTEP);
 		}
 		zwolnij_zasob(semid, SEM_MOSTEK);
@@ -151,7 +148,7 @@ int main(){
 		if(zajmij_zasob(semid, SEM_STATEK_ROWERY) == -1){
 			zwolnij_zasob(semid, SEM_STATEK_LUDZIE);
 			if(zajmij_zasob(semid, SEM_DOSTEP) != -1) {
-				wspolne->pasazerowie_mostek--;
+				wspolne->pasazerowie_mostek -= miejsca_mostek;
 				zwolnij_zasob(semid, SEM_DOSTEP);
 			}
 			zwolnij_zasob(semid, SEM_MOSTEK);
@@ -166,7 +163,7 @@ int main(){
 		zwolnij_zasob(semid, SEM_STATEK_LUDZIE);
         	if (ma_rower) zwolnij_zasob(semid, SEM_STATEK_ROWERY);
         	if (zajmij_zasob(semid, SEM_DOSTEP) != -1) {
-            		wspolne->pasazerowie_mostek--;
+            		wspolne->pasazerowie_mostek -= miejsca_mostek;
             		zwolnij_zasob(semid, SEM_DOSTEP);
         	}
         	zwolnij_zasob(semid, SEM_MOSTEK);
@@ -177,7 +174,7 @@ int main(){
 
 	wspolne->pasazerowie_statek++;
 	if(ma_rower) wspolne ->rowery_statek++;
-	wspolne->pasazerowie_mostek--;
+	wspolne->pasazerowie_mostek -= miejsca_mostek;
 
 	printf("Pasazer (%d) wszedl na statek (Pasazerowie: %d/%d, rowery: %d/%d)\n",
 		pid, wspolne->pasazerowie_statek, N, wspolne->rowery_statek, M);
@@ -224,10 +221,26 @@ int main(){
 		return 0;
 	}
 
+	wspolne->pasazerowie_mostek += miejsca_mostek;
+
 	wspolne->pasazerowie_statek--;
 	if(ma_rower) wspolne->rowery_statek--;
 	printf("Pasazer %d schodzi, na statku zostalo %d pasazerow, %d rowerow\n", pid, wspolne->pasazerowie_statek, wspolne->rowery_statek);
 
+	zwolnij_zasob(semid, SEM_DOSTEP);
+
+	usleep(100000);
+
+	if(zajmij_zasob(semid, SEM_DOSTEP) == -1) {
+		zwolnij_zasob(semid, SEM_STATEK_LUDZIE);
+		if (ma_rower) zwolnij_zasob(semid, SEM_STATEK_ROWERY);
+		zwolnij_zasob(semid, SEM_MOSTEK);
+		if (ma_rower) zwolnij_zasob(semid, SEM_MOSTEK);
+    		shmdt(wspolne);
+    		return 0;
+	}
+
+	wspolne->pasazerowie_mostek -= miejsca_mostek;
 	zwolnij_zasob(semid, SEM_DOSTEP);
 
 	zwolnij_zasob(semid, SEM_STATEK_LUDZIE);

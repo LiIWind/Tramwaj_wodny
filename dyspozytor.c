@@ -22,8 +22,6 @@ int main(){
 		return 1;
 	}
 
-	sleep(1);
-
 	if(zajmij_zasob(semid, SEM_DOSTEP) == -1) {
 		shmdt(wspolne);
 		return 1;

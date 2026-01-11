@@ -151,10 +151,11 @@ ROZLADUNEK:
 
 		while(1){
 			if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-			int pozostalo = statek->pasazerowie_statek;
+			int pozostalo_statek = statek->pasazerowie_statek;
+			int pozostalo_mostek = statek->pasazerowie_mostek;
 			zwolnij_zasob(semid, SEM_DOSTEP);
 
-			if(pozostalo == 0) break;
+			if(pozostalo_statek == 0 && pozostalo_mostek == 0) break;
 
 			usleep(100000);
 		}
