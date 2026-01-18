@@ -1,269 +1,399 @@
 #include "common.h"
 #include "logger.h"
 
-int N, M, K, T1, T2, R;
+int N = 10, M = 3, K = 3, T1 = 2, T2 = 3, R = 5;
 
-volatile sig_atomic_t koniec_pracy = 0;
-volatile sig_atomic_t wymuszone_wyplyniecie = 0;
+static volatile sig_atomic_t wczesniejszy_odjazd = 0;
+static volatile sig_atomic_t koniec_pracy = 0;
 
-void obsluga_sygnalow(int sig){
-	if (sig == SIGUSR1){
-		wymuszone_wyplyniecie = 1;
-		printf("Kapitan otrzymal rozkaz wyplyniecia\n");
-		logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE, "Kapitan otrzymal rozkaz wyplyniecia");
-	}
-	else if (sig == SIGUSR2){
-		koniec_pracy = 1;
-		printf("Kapitan otrzymal rozkaz do zakonczenia pracy\n");
-		logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY, "Kapitan otrzymal rozkaz zakonczenia pracy");
-	}
-	else if (sig == SIGTERM){
-		koniec_pracy =1;
-	}
+void sigusr1_handler(int sig) {
+    (void)sig;
+    wczesniejszy_odjazd = 1;
 }
 
-int main(){
-	if (wczytaj_parametry_z_pliku() == -1){
-		fprintf(stderr, "Kapitan: blad wczytywania parametrow\n");
-		exit(1);
-	}
+void sigusr2_handler(int sig) {
+    (void)sig;
+    koniec_pracy = 1;
+}
 
-	pid_t moj_pid = getpid();
-	printf("Kapitan gotowy do pracy. PID: %d\n", moj_pid);
-	logger_log(LOG_INFO, EVENT_KAPITAN_START, "Kapitan rozpoczyna prace (pid: %d)", moj_pid);
+void sigterm_handler(int sig) {
+    (void)sig;
+    koniec_pracy = 1;
+}
 
-	struct sigaction sa;
-	sa.sa_handler = obsluga_sygnalow;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;
+//Wypycha pasazerow z mostka od ostatniego w kolejce
+void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
+    int liczba = wspolne->liczba_na_mostku;
+    
+    if (liczba == 0) {
+        return;
+    }
+    
+    printf("[KAPITAN] Wypycham %d pasazerow z mostka (od ostatniego)\n", liczba);
+    fflush(stdout);
+    
+    logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC, 
+               "Wypychanie %d pasazerow z mostka", liczba);
+    
+    wspolne->wypychanie_aktywne = 1;
+    wspolne->liczba_wypchnietych = 0;
+    
+    //Wypychanie od ostatniego
+    for (int i = liczba - 1; i >= 0; i--) {
+        PasazerInfo *p = &wspolne->kolejka_mostek[i];
+        
+        //Dodaj do listy wypchnietych
+        wspolne->wypchnieci[wspolne->liczba_wypchnietych++] = p->pid;
+        wspolne->pasazerow_odrzuconych++;
+        
+        printf("[KAPITAN] Wypychasz pasazera PID:%d%s\n", 
+               p->pid, p->ma_rower ? " [ROWER]" : "");
+        fflush(stdout);
+        
+        logger_pasazer_event(EVENT_PASAZER_WYPCHNIETY, p->pid, p->ma_rower,
+                            "wypchniety z mostka");
+        
+        //Wyslij sygnal do pasazera
+        kill(p->pid, SIGUSR1);
+        
+        //Zwolnij miejsce na mostku
+        sem_signal_n(semid, SEM_MOSTEK, p->rozmiar);
+        
+        //Zwolnij zarezerwowane miejsce na statku
+        sem_signal(semid, SEM_STATEK_LUDZIE);
+        if (p->ma_rower) {
+            sem_signal(semid, SEM_STATEK_ROWERY);
+        }
+        
+        //Obudz pasazera zeby sprawdzil ze jest wypchniety
+        sem_signal(semid, SEM_WEJSCIE);
+    }
+    
+    wspolne->liczba_na_mostku = 0;
+    wspolne->wypychanie_aktywne = 0;
+}
 
-	if (sigaction(SIGUSR1, &sa, NULL) == -1) {
-        	perror("Blad sigaction SIGUSR1");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Blad sigaction SIGUSR1");
-        	exit(1);
-    	}
-    	if (sigaction(SIGUSR2, &sa, NULL) == -1) {
-        	perror("Blad sigaction SIGUSR2");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Blad sigaction SIGUSR2");
-        	exit(1);
-    	}
-    	if (sigaction(SIGTERM, &sa, NULL) == -1) {
-        	perror("Blad sigaction SIGTERM");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Blad sigaction SIGTERM");
-        	exit(1);
-    	}
+int main() {
+    if (wczytaj_parametry_z_pliku() == -1) {
+        fprintf(stderr, "Kapitan - blad wczytywania parametrow\n");
+        exit(1);
+    }
 
-	//maska blokuje SIGUSR1(wyplyn)
-	sigset_t maska, stara_maska;
-	sigemptyset(&maska);
-	sigaddset(&maska, SIGUSR1);
+    if (logger_init("tramwaj_wodny.log", 0) == -1) {
+        fprintf(stderr, "Kapitan - blad inicjalizacji loggera\n");
+        exit(1);
+    }
 
-	//pobranie tego samego klucza co main
-	key_t key = ftok(PATH_NAME, PROJECT_ID);
-	if(key == -1){
-		perror("Kapitan - blad ftok");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Kapitan - blad ftok");
-		exit(1);
-	}
+    key_t key = ftok(PATH_NAME, PROJECT_ID);
+    if (key == -1) {
+        perror("Kapitan - blad ftok");
+        logger_close();
+        exit(1);
+    }
 
-	//pobranie ID pamieci
-	int shmid = shmget(key, sizeof(StanStatku), 0600);
-	//pobranie ID semaforow
-	int semid = semget(key, LICZBA_SEM, 0600);
+    int shmid = shmget(key, sizeof(StanStatku), 0);
+    if (shmid == -1) {
+        perror("Kapitan - blad shmget");
+        logger_close();
+        exit(1);
+    }
 
-	if (shmid == -1 || semid == -1){
-		perror("Kapitan - brak zasobow");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Kapitan - brak zasobow");
-		exit(1);
-	}
+    StanStatku *wspolne = (StanStatku*)shmat(shmid, NULL, 0);
+    if (wspolne == (void*)-1) {
+        perror("Kapitan - blad shmat");
+        logger_close();
+        exit(1);
+    }
 
-	logger_init("tramwaj_wodny.log", 0);
-	logger_set_semid(semid);
+    int semid = semget(key, LICZBA_SEM, 0);
+    if (semid == -1) {
+        perror("Kapitan - blad semget");
+        shmdt(wspolne);
+        logger_close();
+        exit(1);
+    }
 
-	//Podlaczenie kapitana
-	StanStatku *statek = (StanStatku*) shmat(shmid, NULL, 0);
-	if(statek == (void*)-1){
-		perror("Kapitan - blad shmat");
-		logger_error_errno(EVENT_BLAD_SYSTEM, "Kapitan - blad shmat");
-		exit(1);
-	}
+    logger_set_semid(semid);
 
-	if(zajmij_zasob(semid, SEM_DOSTEP) == -1){
-		shmdt(statek);
-		exit(1);
-	}
+    //Rejestracja kapitana
+    sem_wait(semid, SEM_MUTEX);
+    wspolne->pid_kapitan = getpid();
+    sem_signal(semid, SEM_MUTEX);
 
-	statek->pid_kapitan = moj_pid;
-	statek->status_kapitana = 1; //w porcie
-	statek->aktualny_przystanek = PRZYSTANEK_WAWEL;
-	zwolnij_zasob(semid, SEM_DOSTEP);
+    //informacja dla dyspozytora, ze kapitan jest gotowy
+    sem_signal(semid, SEM_DYSPOZYTOR_READY);
 
-	logger_log(LOG_INFO, EVENT_KAPITAN_START, "Kapitan zarejestrowany w systemie, przystanek startowy: %s",
-		get_przystanek_nazwa(PRZYSTANEK_WAWEL));
-	printf("Kapitan zarejestrowany, przystanek startowy : %s, maksymalnie rejsow: %d\n", 
-		get_przystanek_nazwa(PRZYSTANEK_WAWEL), R);
+    struct sigaction sa_usr1, sa_usr2, sa_term;
 
-	while(1){
-		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-		int rejsy = statek->liczba_rejsow;
-		int przystanek = statek->aktualny_przystanek;
-		zwolnij_zasob(semid, SEM_DOSTEP);
+    sa_usr1.sa_handler = sigusr1_handler;
+    sigemptyset(&sa_usr1.sa_mask);
+    sa_usr1.sa_flags = 0;
+    sigaction(SIGUSR1, &sa_usr1, NULL);
 
-		if(rejsy>=R || koniec_pracy){
-			break;
-		}
+    sa_usr2.sa_handler = sigusr2_handler;
+    sigemptyset(&sa_usr2.sa_mask);
+    sa_usr2.sa_flags = 0;
+    sigaction(SIGUSR2, &sa_usr2, NULL);
 
-		const char *od_przystanek = get_przystanek_nazwa(przystanek);
-		const char *do_przystanek = get_przystanek_nazwa(1 - przystanek);
+    sa_term.sa_handler = sigterm_handler;
+    sigemptyset(&sa_term.sa_mask);
+    sa_term.sa_flags = 0;
+    sigaction(SIGTERM, &sa_term, NULL);
 
-		printf("REJS %d/%d: %s - %s\n", rejsy + 1, R, od_przystanek, do_przystanek);
+    logger_log(LOG_INFO, EVENT_KAPITAN_START, "Kapitan rozpoczyna prace (PID: %d)", getpid());
+    printf("[KAPITAN] Rozpoczynam prace (PID: %d)\n", getpid());
+    fflush(stdout);
 
-		logger_log(LOG_INFO, EVENT_ZALADUN_START, "Rozpoczecie zaladunku do rejsu %d/%d: %s - %s",
-			rejsy + 1, R, od_przystanek, do_przystanek);
-
-		printf("Kapitan zaczyna zaladunek, czas oczekiwania: %d sekund\n", T1);
-
-		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-		statek->czy_plynie = 0;
-		statek->status_kapitana = 1; //w porcie
-		statek->kierunek_mostka = KIERUNEK_NA_STATEK;
-		zwolnij_zasob(semid, SEM_DOSTEP);
-
-		wymuszone_wyplyniecie = 0;
-
-		//Odblokowanie SIGUSR1 podczas zaladunku
-		sigprocmask(SIG_UNBLOCK, &maska, &stara_maska);
-
-		if (!wymuszone_wyplyniecie){
-			sleep(T1);//oczekiwanie na pasazerow
-		} else {
-			printf("Wymuszone wyplyniecie\n");
-			logger_log(LOG_WARNING, EVENT_SYGNAL_ODPLYNIECIE, "Wymuszono wyplyniecie");
-			sleep(1);
-		}
-
-		//blokowania SIGUSR1 podczas rejsu
-		sigprocmask(SIG_SETMASK, &stara_maska, NULL);
-
-		if (koniec_pracy){
-			printf("Kapitan odwoluje rejs i wysadza pasazerow\n");
-			logger_log(LOG_WARNING, EVENT_KAPITAN_STOP, "Kapitan odwoluje rejs i konczy prace");
-
-			if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-			statek->czy_plynie = 1;
-			int pasazerow = statek->pasazerowie_statek;
-			zwolnij_zasob(semid, SEM_DOSTEP);
-
-			if(pasazerow > 0){
-				printf("Kapitan wysadza %d pasazerow i konczy prace\n", pasazerow);
-				logger_log(LOG_INFO, EVENT_ZALADUN_KONIEC, "Kapitan wysadza %d pasazerow", pasazerow);
-				goto ROZLADUNEK;
-			}
-			break;
-		}
-
-		//Sprawdzenie mostka
-		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-		if(statek->pasazerowie_mostek > 0){
-			printf("Ktos jest na mostku, oczekiwanie na zejscie\n");
-			logger_log(LOG_WARNING, EVENT_REJS_START, "Ktos jest na mostku, oczekiwanie na zejscie");
-		}
-
-		statek->czy_plynie = 1;
-		statek->status_kapitana = 0;
-		statek->kierunek_mostka = KIERUNEK_BRAK;
-		int pasazerow = statek->pasazerowie_statek;
-		int rowerow = statek->rowery_statek;
-		int skad = przystanek;
-
-		zwolnij_zasob(semid, SEM_DOSTEP);
-
-		printf("Kapitan odplywa z przystanku: %s, liczba pasazerow: %d, liczba rowerow: %d, czas rejsu %ds\n",
-			od_przystanek, pasazerow, rowerow, T2);
-		logger_rejs_event(EVENT_REJS_START, rejsy + 1, pasazerow, rowerow, od_przystanek);
-
-		sleep(T2);
-
-		int dokad = 1 - skad;
-
-		printf("Kapitan doplynal do przystanku %s, pasazerowie opusczaja statek\n", get_przystanek_nazwa(dokad));
-		logger_rejs_event(EVENT_REJS_KONIEC, rejsy + 1, pasazerow, rowerow, get_przystanek_nazwa(dokad));
-
-ROZLADUNEK:
-		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-		statek->kierunek_mostka = KIERUNEK_ZE_STATKU;
-		statek->aktualny_przystanek = dokad;
-		zwolnij_zasob(semid, SEM_DOSTEP);
-
-		int proba = 0;
-		int max_prob = 300;
-		while(proba < max_prob){
-			if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-			int pozostalo_statek = statek->pasazerowie_statek;
-			int pozostalo_mostek = statek->pasazerowie_mostek;
-			zwolnij_zasob(semid, SEM_DOSTEP);
-
-			if(pozostalo_statek == 0){
-				if(pozostalo_mostek > 0) {
-					if(proba % 10 == 0){
-						printf("Czekanie na pusty mostek\n");
-					}
-					usleep(100000);
-					proba++;
-					continue;
-				}
-				break;
-			}
-			if (proba % 10 == 0 && proba > 0) {
-				printf("Wysiadanie - pozostalo %d na statku i %d na mostku\n",
-					pozostalo_statek, pozostalo_mostek);
-			}
-			usleep(100000);
-			proba++;
-		}
-
-		printf("Statek pusty\n");
-		logger_log(LOG_INFO, EVENT_ZALADUN_KONIEC, "Rejs %d zakonczony, statek pusty", rejsy+1);
-
-
-		if(zajmij_zasob(semid, SEM_DOSTEP) == -1) break;
-		statek->liczba_rejsow++;
-		statek->kierunek_mostka = KIERUNEK_BRAK;
-		statek->status_kapitana = 1;
-		int nowe_rejsy = statek->liczba_rejsow;
-		zwolnij_zasob(semid, SEM_DOSTEP);
-
-		printf("Rejs %d/%d zakonczony pomyslnie\n", nowe_rejsy, R);
-
-		if (koniec_pracy){
-			printf("Kapitan konczy prace po %d rejsach\n", nowe_rejsy);
-			logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan konczy prace po %d rejsach\n", nowe_rejsy);
-			break;
-		}
-
-		if(nowe_rejsy >= R){
-			printf("Kapitan wykonal maksymalna liczbe rejsow: %d\n", R);
-			logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan wykonal maksymalna liczbe rejsow: %d", R);
-			break;
-		}
-
-		printf("Zaladunek do kolejnego rejsu w %s\n", get_przystanek_nazwa(dokad));
-		logger_log(LOG_INFO, EVENT_ZALADUN_START,
-			"Zaladunek do kolejnego rejsu w %s", get_przystanek_nazwa(dokad));
-
-		sleep(2);
-	}
-
-
-	if(zajmij_zasob(semid, SEM_DOSTEP) != -1){
-		statek->koniec_symulacji = 1;
-		int wykonano_rejsow = statek->liczba_rejsow;
-		zwolnij_zasob(semid, SEM_DOSTEP);
-		printf("Kapitan konczy zmiane. \n");
-		printf("Wykonanych rejsow: %d/%d\n", wykonano_rejsow, R);
-		logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan konczy zmiane, wykonanych rejsow: %d/%d\n", wykonano_rejsow, R);
-	}
-
-	shmdt(statek);
-	return 0;
+    //Glowna petla rejsow
+    while (1) {
+        sem_wait(semid, SEM_MUTEX);
+        
+        int rejsow = wspolne->liczba_rejsow;
+        int przystanek = wspolne->aktualny_przystanek;
+        
+        if (koniec_pracy && wspolne->status_kapitana == STATUS_ZALADUNEK) {
+            wspolne->koniec_symulacji = 1;
+            wspolne->status_kapitana = STATUS_STOP;
+            wypchnij_z_mostka(semid, wspolne);
+            sem_signal(semid, SEM_MUTEX);
+            
+            logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
+                      "SIGUSR2 podczas zaladunku - koncze bez rejsu");
+            printf("[KAPITAN] SIGUSR2 - koncze prace bez rejsu\n");
+            fflush(stdout);
+            break;
+        }
+        
+        if (wspolne->koniec_symulacji || rejsow >= R) {
+            wspolne->koniec_symulacji = 1;
+            wspolne->status_kapitana = STATUS_STOP;
+            sem_signal(semid, SEM_MUTEX);
+            
+            logger_log(LOG_INFO, EVENT_KAPITAN_STOP, 
+                      "Zakonczono prace (rejsow: %d/%d)", rejsow, R);
+            printf("[KAPITAN] Zakonczono - wykonano %d/%d rejsow\n", rejsow, R);
+            fflush(stdout);
+            break;
+        }
+        
+        //Rozpocznij zaladunek
+        wspolne->status_kapitana = STATUS_ZALADUNEK;
+        wspolne->zaladunek_otwarty = 1;
+        wspolne->rejs_id++;
+        wspolne->liczba_wypchnietych = 0;
+        
+        int rejs_id = wspolne->rejs_id;
+        
+        sem_signal(semid, SEM_MUTEX);
+        
+        logger_log(LOG_INFO, EVENT_ZALADUNEK_START,
+                  "Zaladunek #%d na przystanku %s", rejs_id, get_przystanek_nazwa(przystanek));
+        printf("\n[KAPITAN] === REJS #%d - ZALADUNEK na %s ===\n",
+               rejs_id, get_przystanek_nazwa(przystanek));
+        fflush(stdout);
+        
+        wczesniejszy_odjazd = 0;
+        
+        int sem_zaladunek = (przystanek == PRZYSTANEK_WAWEL) 
+                          ? SEM_ZALADUNEK_WAWEL 
+                          : SEM_ZALADUNEK_TYNIEC;
+        //Otworz zaladunek
+        for (int i = 0; i < 100; i++) {
+            sem_signal(semid, sem_zaladunek);
+        }
+        
+        //Czas zaladunku
+        for (int sekunda = 0; sekunda < T1; sekunda++) {
+            if (wczesniejszy_odjazd) {
+                logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
+                          "Wczesniejszy odjazd po %d/%d s", sekunda, T1);
+                printf("[KAPITAN] SIGUSR1 - wczesniejszy odjazd po %d/%d s\n", sekunda, T1);
+                fflush(stdout);
+                break;
+            }
+            
+            if (koniec_pracy) {
+                break;
+            }
+            
+            //Wpuszczaj pasazerow z mostka
+            sem_wait(semid, SEM_MUTEX);
+            int na_mostku = wspolne->liczba_na_mostku;
+            int czekajacych = wspolne->pasazerow_czekajacych_na_wejscie;
+            sem_signal(semid, SEM_MUTEX);
+            
+            int do_wyslania = (na_mostku > czekajacych) ? na_mostku : czekajacych;
+            for (int j = 0; j < do_wyslania; j++) {
+                sem_signal(semid, SEM_WEJSCIE);
+            }
+            
+            sem_signal(semid, SEM_DYSPOZYTOR_EVENT);
+            
+            //Symulacja upływu czasu
+            //sleep(1);
+        }
+        
+        //Zamknij zaladunek
+        sem_wait(semid, SEM_MUTEX);
+        wspolne->zaladunek_otwarty = 0;
+        sem_signal(semid, SEM_MUTEX);
+        
+        for (int i = 0; i < 200; i++) {
+            sem_trywait(semid, sem_zaladunek);
+        }
+        
+        for (int i = 0; i < 200; i++) {
+            sem_trywait(semid, SEM_WEJSCIE);
+        }
+        
+        sem_wait(semid, SEM_MUTEX);
+        
+        wypchnij_z_mostka(semid, wspolne);
+        
+        int pasazerow = wspolne->pasazerowie_na_statku;
+        int rowerow = wspolne->rowery_na_statku;
+        
+        //Sprawdz SIGUSR2 po zamknieciu zaladunku
+        if (koniec_pracy) {
+            wspolne->koniec_symulacji = 1;
+            wspolne->status_kapitana = STATUS_STOP;
+            
+            //Jesli sa pasazerowie na statku to musza wysiasc
+            if (pasazerow > 0) {
+                wspolne->pasazerow_do_rozladunku = pasazerow;
+                sem_signal(semid, SEM_MUTEX);
+                
+                for (int i = 0; i < pasazerow + 10; i++) {
+                    sem_signal(semid, SEM_ROZLADUNEK);
+                }
+                //Czekaj na zejscie wszystkich
+                sem_wait(semid, SEM_ROZLADUNEK_KONIEC);
+            } else {
+                sem_signal(semid, SEM_MUTEX);
+            }
+            
+            logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
+                      "SIGUSR2 - koncze po zaladunku");
+            printf("[KAPITAN] SIGUSR2 - koncze prace\n");
+            fflush(stdout);
+            break;
+        }
+        
+        sem_signal(semid, SEM_MUTEX);
+        
+        logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC,
+                  "Zaladunek zakonczony: %d pasazerow, %d rowerow", pasazerow, rowerow);
+        printf("[KAPITAN] Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
+               pasazerow, rowerow);
+        fflush(stdout);
+        
+        //Rozpocznij rejs
+        sem_wait(semid, SEM_MUTEX);
+        
+        wspolne->status_kapitana = STATUS_REJS;
+        wspolne->liczba_rejsow++;
+        rejsow = wspolne->liczba_rejsow;
+        
+        if (przystanek == PRZYSTANEK_WAWEL) {
+            wspolne->total_pasazerow_wawel += pasazerow;
+        } else {
+            wspolne->total_pasazerow_tyniec += pasazerow;
+        }
+        
+        wspolne->pasazerow_do_rozladunku = pasazerow;
+        
+        sem_signal(semid, SEM_MUTEX);
+        
+        const char* cel = get_przystanek_nazwa(
+            przystanek == PRZYSTANEK_WAWEL ? PRZYSTANEK_TYNIEC : PRZYSTANEK_WAWEL);
+        
+        logger_rejs_event(EVENT_REJS_START, rejsow, pasazerow, rowerow,
+                         get_przystanek_nazwa(przystanek));
+        printf("[KAPITAN] REJS #%d START: %s -> %s (%d pasazerow, %d rowerow)\n",
+               rejsow, get_przystanek_nazwa(przystanek), cel, pasazerow, rowerow);
+        fflush(stdout);
+        
+        //Czas rejsu T2 - symulacja czasu
+        for (int sekunda = 0; sekunda < T2; sekunda++) {
+            if (koniec_pracy) {
+                //SIGUSR2 w trakcie rejsu - kontynuujemy normalnie
+                logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
+                          "SIGUSR2 w trakcie rejsu - koncze rejs normalnie");
+                printf("[KAPITAN] SIGUSR2 w trakcie rejsu - dokoncze rejs\n");
+                fflush(stdout);
+            }
+            //Symulacja upływu czasu
+            //sleep(1);
+        }
+        
+        //Dotarcie do celu
+        sem_wait(semid, SEM_MUTEX);
+        
+        int nowy_przystanek = (przystanek == PRZYSTANEK_WAWEL) 
+                            ? PRZYSTANEK_TYNIEC 
+                            : PRZYSTANEK_WAWEL;
+        wspolne->aktualny_przystanek = nowy_przystanek;
+        wspolne->status_kapitana = STATUS_ROZLADUNEK;
+        
+        sem_signal(semid, SEM_MUTEX);
+        
+        logger_rejs_event(EVENT_REJS_KONIEC, rejsow, pasazerow, rowerow,
+                         get_przystanek_nazwa(nowy_przystanek));
+        printf("[KAPITAN] REJS #%d KONIEC - dotarlismy do %s\n",
+               rejsow, get_przystanek_nazwa(nowy_przystanek));
+        printf("[KAPITAN] Rozpoczynam rozladunek\n");
+        fflush(stdout);
+        
+        //Otworz rozladunek
+        if (pasazerow > 0) {
+            for (int i = 0; i < pasazerow + 10; i++) {
+                sem_signal(semid, SEM_ROZLADUNEK);
+            }
+            
+            //Czekaj az ostatni pasazer zejdzie
+            sem_wait(semid, SEM_ROZLADUNEK_KONIEC);
+            
+            for (int i = 0; i < pasazerow + 10; i++) {
+                sem_trywait(semid, SEM_ROZLADUNEK);
+            }
+        }
+        
+        logger_log(LOG_INFO, EVENT_REJS_KONIEC, "Rozladunek zakonczony");
+        printf("[KAPITAN] Rozladunek zakonczony\n");
+        fflush(stdout);
+        
+        //Sprawdz czy konczymy po tym rejsie
+        if (koniec_pracy) {
+            sem_wait(semid, SEM_MUTEX);
+            wspolne->koniec_symulacji = 1;
+            wspolne->status_kapitana = STATUS_STOP;
+            sem_signal(semid, SEM_MUTEX);
+            
+            printf("[KAPITAN] Koncze prace po rejsie #%d\n", rejsow);
+            fflush(stdout);
+            break;
+        }
+    }
+    
+    //Obudz dyspozytora zeby mogl zakonczyc
+    sem_signal(semid, SEM_DYSPOZYTOR_EVENT);
+    
+    //Obudz wszystkich czekajacych pasazerow zeby mogli zakonczyc
+    printf("[KAPITAN] Budzę oczekujących pasażerów...\n");
+    fflush(stdout);
+    
+    for (int i = 0; i < 200; i++) {
+        sem_signal(semid, SEM_ZALADUNEK_WAWEL);
+        sem_signal(semid, SEM_ZALADUNEK_TYNIEC);
+        sem_signal(semid, SEM_WEJSCIE);
+        sem_signal(semid, SEM_ROZLADUNEK);
+    }
+    
+    logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan konczy prace");
+    printf("[KAPITAN] Koniec pracy\n");
+    fflush(stdout);
+    
+    shmdt(wspolne);
+    logger_close();
+    return 0;
 }
