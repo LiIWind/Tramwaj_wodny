@@ -75,12 +75,19 @@ int logger_init(const char *filename, int write_header) {
 
 void logger_close(void) {
     if (log_file != NULL) {
-        time_t now = time(NULL);
-        lock_log();
-        fprintf(log_file, "\nKoniec logowania: %s\n", ctime(&now));
         fclose(log_file);
         log_file = NULL;
+    }
+}
+
+void logger_close_final(void) {
+    if (log_file != NULL) {
+        time_t now = time(NULL);
+        lock_log();
+        fprintf(log_file, "\nKoniec logowania: %s", ctime(&now));
         unlock_log();
+        fclose(log_file);
+        log_file = NULL;
     }
 }
 

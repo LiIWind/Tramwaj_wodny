@@ -38,6 +38,7 @@ static int dodaj_do_kolejki(StanStatku *wspolne, pid_t pid, int ma_rower) {
     wspolne->kolejka_mostek[idx].ma_rower = ma_rower;
     wspolne->kolejka_mostek[idx].rozmiar = ma_rower ? 2 : 1;
     wspolne->liczba_na_mostku++;
+    wspolne->miejsca_zajete_mostek += (ma_rower ? 2 : 1);
     
     return idx;
 }
@@ -46,10 +47,12 @@ static int dodaj_do_kolejki(StanStatku *wspolne, pid_t pid, int ma_rower) {
 static void usun_z_kolejki(StanStatku *wspolne, pid_t pid) {
     for (int i = 0; i < wspolne->liczba_na_mostku; i++) {
         if (wspolne->kolejka_mostek[i].pid == pid) {
+            int rozmiar = wspolne->kolejka_mostek[i].rozmiar;
             for (int j = i; j < wspolne->liczba_na_mostku - 1; j++) {
                 wspolne->kolejka_mostek[j] = wspolne->kolejka_mostek[j + 1];
             }
             wspolne->liczba_na_mostku--;
+            wspolne->miejsca_zajete_mostek -= rozmiar;
             return;
         }
     }
@@ -123,6 +126,7 @@ int main() {
     fflush(stdout);
     
     int ostatni_rejs_proba = -1;  //ID rejsu w ktorym ostatnio probowal wejsc
+    int odbylem_rejs = 0; 
     
     //Glowna petla proba wejscia na statek
     while (!koniec) {
@@ -197,7 +201,6 @@ int main() {
                 sem_signal(semid, SEM_STATEK_LUDZIE);
                 
                 sem_wait(semid, SEM_MUTEX);
-                wspolne->pasazerow_odrzuconych++;
                 ostatni_rejs_proba = wspolne->rejs_id;
                 sem_signal(semid, SEM_MUTEX);
                 
@@ -242,13 +245,15 @@ int main() {
         }
         
         wspolne->pasazerow_czekajacych_na_wejscie++;
+        int miejsca_zajete = wspolne->miejsca_zajete_mostek;
         
         sem_signal(semid, SEM_MUTEX);
         
         logger_pasazer_event(EVENT_PASAZER_WEJSCIE_MOSTEK, moj_pid, ma_rower,
                             "na mostku");
-        printf("[PASAZER %d] Wszedlem na mostek (pozycja: %d)%s\n",
-               moj_pid, pozycja + 1, ma_rower ? " [ROWER - 2 miejsca]" : "");
+        printf("[PASAZER %d] Wszedlem na mostek (pozycja: %d, mostek: %d/%d)%s\n",
+               moj_pid, pozycja + 1, miejsca_zajete, K,
+               ma_rower ? " [ROWER - 2 miejsca]" : "");
         fflush(stdout);
         
         wypchniety = 0;
@@ -270,6 +275,7 @@ int main() {
         sem_wait(semid, SEM_MUTEX);
         
         int zostal_wypchniety = wypchniety || czy_wypchniety(wspolne, moj_pid);
+        int zaladunek_zamkniety = !wspolne->zaladunek_otwarty;
         
         if (zostal_wypchniety) {
             //Wypchnienty kapitan juz zwolnil zasoby
@@ -282,6 +288,20 @@ int main() {
             fflush(stdout);
             
             wypchniety = 0;
+            continue;
+        }
+
+        if (zaladunek_zamkniety) {
+            usun_z_kolejki(wspolne, moj_pid);
+            wspolne->pasazerow_czekajacych_na_wejscie--;
+            sem_signal(semid, SEM_MUTEX);
+            
+            sem_signal_n(semid, SEM_MOSTEK, rozmiar);
+            sem_signal(semid, SEM_STATEK_LUDZIE);
+            if (ma_rower) sem_signal(semid, SEM_STATEK_ROWERY);
+            
+            printf("[PASAZER %d] Za pozno - zaladunek zamkniety\n", moj_pid);
+            fflush(stdout);
             continue;
         }
         
@@ -352,9 +372,16 @@ int main() {
         fflush(stdout);
         
         //Pasazer konczy po jednym rejsie
+        odbylem_rejs = 1;
         break;
     }
+    if (!odbylem_rejs) {
+        sem_wait(semid, SEM_MUTEX);
+        wspolne->pasazerow_odrzuconych++;
+        sem_signal(semid, SEM_MUTEX);
+    }
     
+
     shmdt(wspolne);
     logger_close();
     return 0;

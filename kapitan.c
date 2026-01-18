@@ -44,7 +44,6 @@ void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
         
         //Dodaj do listy wypchnietych
         wspolne->wypchnieci[wspolne->liczba_wypchnietych++] = p->pid;
-        wspolne->pasazerow_odrzuconych++;
         
         printf("[KAPITAN] Wypychasz pasazera PID:%d%s\n", 
                p->pid, p->ma_rower ? " [ROWER]" : "");
@@ -58,6 +57,7 @@ void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
         
         //Zwolnij miejsce na mostku
         sem_signal_n(semid, SEM_MOSTEK, p->rozmiar);
+        wspolne->miejsca_zajete_mostek -= p->rozmiar;
         
         //Zwolnij zarezerwowane miejsce na statku
         sem_signal(semid, SEM_STATEK_LUDZIE);
@@ -70,6 +70,7 @@ void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
     }
     
     wspolne->liczba_na_mostku = 0;
+    wspolne->miejsca_zajete_mostek = 0;
     wspolne->wypychanie_aktywne = 0;
 }
 
@@ -205,6 +206,17 @@ int main() {
         //Czas zaladunku
         for (int sekunda = 0; sekunda < T1; sekunda++) {
             if (wczesniejszy_odjazd) {
+                sem_wait(semid, SEM_MUTEX);
+                wspolne->zaladunek_otwarty = 0;
+                sem_signal(semid, SEM_MUTEX);
+                
+                for (int i = 0; i < 200; i++) {
+                    sem_trywait(semid, sem_zaladunek);
+                }
+                for (int i = 0; i < 200; i++) {
+                    sem_trywait(semid, SEM_WEJSCIE);
+                }
+                
                 logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
                           "Wczesniejszy odjazd po %d/%d s", sekunda, T1);
                 printf("[KAPITAN] SIGUSR1 - wczesniejszy odjazd po %d/%d s\n", sekunda, T1);
@@ -213,6 +225,9 @@ int main() {
             }
             
             if (koniec_pracy) {
+                sem_wait(semid, SEM_MUTEX);
+                wspolne->zaladunek_otwarty = 0;
+                sem_signal(semid, SEM_MUTEX);
                 break;
             }
             
@@ -249,9 +264,20 @@ int main() {
         sem_wait(semid, SEM_MUTEX);
         
         wypchnij_z_mostka(semid, wspolne);
-        
+
         int pasazerow = wspolne->pasazerowie_na_statku;
         int rowerow = wspolne->rowery_na_statku;
+        int na_mostku = wspolne->liczba_na_mostku;
+        
+        printf("[KAPITAN] Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
+               pasazerow, rowerow);
+        fflush(stdout);
+        logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC,
+                  "Zaladunek zakonczony: %d pasazerow, %d rowerow", pasazerow, rowerow);
+
+        if (na_mostku > 0) {
+            wypchnij_z_mostka(semid, wspolne);
+        }
         
         //Sprawdz SIGUSR2 po zamknieciu zaladunku
         if (koniec_pracy) {
@@ -280,12 +306,6 @@ int main() {
         }
         
         sem_signal(semid, SEM_MUTEX);
-        
-        logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC,
-                  "Zaladunek zakonczony: %d pasazerow, %d rowerow", pasazerow, rowerow);
-        printf("[KAPITAN] Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
-               pasazerow, rowerow);
-        fflush(stdout);
         
         //Rozpocznij rejs
         sem_wait(semid, SEM_MUTEX);

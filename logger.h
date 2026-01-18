@@ -43,6 +43,7 @@ typedef enum {
 int logger_init(const char *filename, int write_header);
 void logger_set_semid(int semid);
 void logger_close(void);
+void logger_close_final(void);
 
 void logger_log(LogLevel level, EventType event, const char *format, ...);
 void logger_error_errno(EventType event, const char *msg);

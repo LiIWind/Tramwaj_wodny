@@ -151,7 +151,7 @@ int main() {
     //generowanie pasazerow
     printf("Generowanie pasazerow...\n\n");
     
-    int liczba_pasazerow = 5000;
+    int liczba_pasazerow = 500;
     int wygenerowano = 0;
     
     wspolne = (StanStatku*)shmat(shmid, NULL, 0);
@@ -233,8 +233,8 @@ int main() {
         printf("Pasazerowie przewiezieni:\n");
         printf("  - z Wawelu: %d\n", wspolne->total_pasazerow_wawel);
         printf("  - z Tynca: %d\n", wspolne->total_pasazerow_tyniec);
-        printf("  - lacznie: %d\n",
-	        wspolne->total_pasazerow_wawel + wspolne->total_pasazerow_tyniec);
+        printf("  - lacznie: %d\n", 
+               wspolne->total_pasazerow_wawel + wspolne->total_pasazerow_tyniec);
         printf("Pasazerowie odrzuceni: %d\n", wspolne->pasazerow_odrzuconych);
         printf("\n\n");
         
@@ -267,6 +267,6 @@ int main() {
     
     printf("Symulacja zakonczona. Log zapisano w tramwaj_wodny.log\n");
     
-    logger_close();
+    logger_close_final();
     return 0;
 }

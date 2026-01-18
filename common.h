@@ -1,7 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -51,11 +50,6 @@ extern int R;  // Maksymalna liczba rejsow
 #define STATUS_ROZLADUNEK  2
 #define STATUS_STOP        3
 
-//Kierunek mostka
-#define KIERUNEK_BRAK      0
-#define KIERUNEK_NA_STATEK 1
-#define KIERUNEK_ZE_STATKU 2
-
 #define MAX_PASAZEROW_MOSTEK 200
 
 //Struktura pasazera w kolejce
@@ -84,6 +78,8 @@ typedef struct {
     PasazerInfo kolejka_mostek[MAX_PASAZEROW_MOSTEK];
     int liczba_na_mostku;
     int wypychanie_aktywne;
+
+    int miejsca_zajete_mostek;
     
     //Lista wypchnietych w biezacym cyklu
     pid_t wypchnieci[MAX_PASAZEROW_MOSTEK];
