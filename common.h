@@ -52,6 +52,11 @@ extern int R;  // Maksymalna liczba rejsow
 
 #define MAX_PASAZEROW_MOSTEK 200
 
+#define RED "\033[31m"
+#define GREEN "\033[32m"
+#define BLUE "\033[34m"
+#define RESET "\033[0m"
+
 //Struktura pasazera w kolejce
 typedef struct {
     pid_t pid;

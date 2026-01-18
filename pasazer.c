@@ -67,7 +67,7 @@ int main() {
     int moj_przystanek = (rand() % 2) ? PRZYSTANEK_WAWEL : PRZYSTANEK_TYNIEC; //50% szans na przystanek
     
     if (wczytaj_parametry_z_pliku() == -1) {
-        fprintf(stderr, "Pasazer - blad wczytywania parametrow\n");
+        fprintf(stderr, RED "[Pasazer]" RESET "- blad wczytywania parametrow\n");
         exit(1);
     }
     
@@ -120,7 +120,7 @@ int main() {
     
     logger_pasazer_event(EVENT_PASAZER_PRZYBYCIE, moj_pid, ma_rower,
                         moj_przystanek == PRZYSTANEK_WAWEL ? "Wawel" : "Tyniec");
-    printf("[PASAZER %d] Przybylem na przystanek %s %s\n", moj_pid,
+    printf(RED "[PASAZER %d]" RESET "Przybylem na przystanek %s %s\n", moj_pid,
            get_przystanek_nazwa(moj_przystanek),
            ma_rower ? "[ROWER]" : "");
     fflush(stdout);
@@ -135,7 +135,7 @@ int main() {
         if (wspolne->koniec_symulacji) {
             sem_signal(semid, SEM_MUTEX);
             logger_pasazer_event(EVENT_PASAZER_OPUSZCZENIE, moj_pid, ma_rower,
-                                "symulacja zakończona");
+                                "symulacja zakonczona");
             break;
         }
         int aktualny_rejs = wspolne->rejs_id;
@@ -204,7 +204,7 @@ int main() {
                 ostatni_rejs_proba = wspolne->rejs_id;
                 sem_signal(semid, SEM_MUTEX);
                 
-                printf("[PASAZER %d] Brak miejsca na rower - czekam na nastepny rejs\n", moj_pid);
+                printf(RED "[PASAZER %d]" RESET "Brak miejsca na rower - czekam na nastepny rejs\n", moj_pid);
                 fflush(stdout);
                 //Musze poczekac na nastepny cykl zaladunku
                 continue;
@@ -229,7 +229,7 @@ int main() {
             sem_signal(semid, SEM_STATEK_LUDZIE);
             if (ma_rower) sem_signal(semid, SEM_STATEK_ROWERY);
             
-            printf("[PASAZER %d] Za pozno - zaladunek zamkniety\n", moj_pid);
+            printf(RED "[PASAZER %d]" RESET "Za pozno - zaladunek zamkniety\n", moj_pid);
             fflush(stdout);
             continue;
         }
@@ -251,7 +251,7 @@ int main() {
         
         logger_pasazer_event(EVENT_PASAZER_WEJSCIE_MOSTEK, moj_pid, ma_rower,
                             "na mostku");
-        printf("[PASAZER %d] Wszedlem na mostek (pozycja: %d, mostek: %d/%d)%s\n",
+        printf(RED "[PASAZER %d]" RESET "Wszedlem na mostek (pozycja: %d, mostek: %d/%d)%s\n",
                moj_pid, pozycja + 1, miejsca_zajete, K,
                ma_rower ? " [ROWER - 2 miejsca]" : "");
         fflush(stdout);
@@ -284,7 +284,7 @@ int main() {
             
             logger_pasazer_event(EVENT_PASAZER_WYPCHNIETY, moj_pid, ma_rower,
                                 "wypchnienty - czekam na nastepny rejs");
-            printf("[PASAZER %d] Zostalem wypchnienty - czekam na nastepny rejs\n", moj_pid);
+            printf(RED "[PASAZER %d]" RESET "Zostalem wypchnienty - czekam na nastepny rejs\n", moj_pid);
             fflush(stdout);
             
             wypchniety = 0;
@@ -300,7 +300,7 @@ int main() {
             sem_signal(semid, SEM_STATEK_LUDZIE);
             if (ma_rower) sem_signal(semid, SEM_STATEK_ROWERY);
             
-            printf("[PASAZER %d] Za pozno - zaladunek zamkniety\n", moj_pid);
+            printf(RED "[PASAZER %d]" RESET "Za pozno - zaladunek zamkniety\n", moj_pid);
             fflush(stdout);
             continue;
         }
@@ -321,7 +321,7 @@ int main() {
         
         logger_pasazer_event(EVENT_PASAZER_WEJSCIE_STATEK, moj_pid, ma_rower,
                             "na statku");
-        printf("[PASAZER %d] Wszedlem na STATEK (pasazerow: %d, rowerow: %d)\n",
+        printf(RED "[PASAZER %d]" RESET "Wszedlem na STATEK (pasazerow: %d, rowerow: %d)\n",
                moj_pid, na_statku, rowerow);
         fflush(stdout);
         
@@ -340,7 +340,7 @@ int main() {
         //Schodzenie ze statku
         logger_pasazer_event(EVENT_PASAZER_WYJSCIE_STATEK, moj_pid, ma_rower,
                             "schodzi ze statku");
-        printf("[PASAZER %d] Schodze ze STATKU\n", moj_pid);
+        printf(RED "[PASAZER %d]" RESET "Schodze ze STATKU\n", moj_pid);
         fflush(stdout);
         
         sem_wait_n(semid, SEM_MOSTEK, rozmiar);
@@ -367,7 +367,7 @@ int main() {
         
         logger_pasazer_event(EVENT_PASAZER_OPUSZCZENIE, moj_pid, ma_rower,
                             get_przystanek_nazwa(nowy_przystanek));
-        printf("[PASAZER %d] Opuscilem statek na przystanku %s - KONIEC\n",
+        printf(RED "[PASAZER %d]" RESET "Opuscilem statek na przystanku %s - KONIEC\n",
                moj_pid, get_przystanek_nazwa(nowy_przystanek));
         fflush(stdout);
         

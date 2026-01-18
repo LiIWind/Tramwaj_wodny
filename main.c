@@ -197,7 +197,7 @@ int main() {
     printf("Wygenerowano %d pasazerow\n\n", wygenerowano);
     logger_log(LOG_INFO, EVENT_SYSTEM_START, "Wygenerowano %d pasazerow", wygenerowano);
     
-    printf("Czekam na zakończenie kapitana i dyspozytora...\n");
+    printf("Czekam na zakonczenie kapitana i dyspozytora...\n");
     
     waitpid(pid_kapitan, NULL, 0);
     logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan zakonczyl prace");

@@ -59,7 +59,7 @@ int main() {
     sigaction(SIGTERM, &sa_term, NULL);
     
     logger_log(LOG_INFO, EVENT_DYSPOZYTOR_START, "Dyspozytor rozpoczyna prace");
-    printf("[DYSPOZYTOR] Rozpoczynam prace (PID: %d)\n", getpid());
+    printf(GREEN "[DYSPOZYTOR]" RESET "Rozpoczynam prace (PID: %d)\n", getpid());
     fflush(stdout);
     
     if (sem_wait(semid, SEM_DYSPOZYTOR_READY) == -1) {
@@ -76,7 +76,7 @@ int main() {
     
     logger_log(LOG_INFO, EVENT_DYSPOZYTOR_START, 
                "Zidentyfikowano kapitana (PID: %d)", pid_kapitan);
-    printf("[DYSPOZYTOR] Kapitan gotowy (PID: %d)\n", pid_kapitan);
+    printf(GREEN "[DYSPOZYTOR]" RESET "Kapitan gotowy (PID: %d)\n", pid_kapitan);
     fflush(stdout);
     
     int wyslalem_sigusr1 = 0;
@@ -108,7 +108,7 @@ int main() {
         if (koniec || rejsow >= R) {
             logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP,
                       "Koncze prace (rejsow: %d/%d)", rejsow, R);
-            printf("[DYSPOZYTOR] Koncze prace (rejsow: %d/%d)\n", rejsow, R);
+            printf(GREEN "[DYSPOZYTOR]" RESET "Koncze prace (rejsow: %d/%d)\n", rejsow, R);
             fflush(stdout);
             break;
         }
@@ -120,7 +120,7 @@ int main() {
                 logger_sygnal("SIGUSR1 (wczesniejszy odjazd)", getpid(), pid_kapitan);
                 logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
                           "Wyslano SIGUSR1 do kapitana");
-                printf("\n[DYSPOZYTOR] - SIGUSR1 - Wczesniejszy odjazd (po %d rejsach)\n\n",
+                printf(GREEN "\n[DYSPOZYTOR]" RESET "- SIGUSR1 - Wczesniejszy odjazd (po %d rejsach)\n\n",
                        rejsow);
                 fflush(stdout);
                 wyslalem_sigusr1 = 1;
@@ -135,7 +135,7 @@ int main() {
                 logger_sygnal("SIGUSR2 (koniec pracy)", getpid(), pid_kapitan);
                 logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
                           "Wyslano SIGUSR2 do kapitana");
-                printf("\n[DYSPOZYTOR] - SIGUSR2 - Koniec pracy (po %d rejsach)\n\n",
+                printf(GREEN "\n[DYSPOZYTOR]" RESET "- SIGUSR2 - Koniec pracy (po %d rejsach)\n\n",
                        rejsow);
                 fflush(stdout);
                 wyslalem_sigusr2 = 1;
@@ -147,7 +147,7 @@ int main() {
     }
     
     logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP, "Dyspozytor konczy prace");
-    printf("[DYSPOZYTOR] Koniec pracy\n");
+    printf(GREEN "[DYSPOZYTOR]" RESET "Koniec pracy\n");
     fflush(stdout);
     
     shmdt(wspolne);

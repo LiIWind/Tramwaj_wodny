@@ -29,7 +29,7 @@ void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
         return;
     }
     
-    printf("[KAPITAN] Wypycham %d pasazerow z mostka (od ostatniego)\n", liczba);
+    printf(BLUE "[KAPITAN]" RESET "Wypycham %d pasazerow z mostka (od ostatniego)\n", liczba);
     fflush(stdout);
     
     logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC, 
@@ -45,7 +45,7 @@ void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
         //Dodaj do listy wypchnietych
         wspolne->wypchnieci[wspolne->liczba_wypchnietych++] = p->pid;
         
-        printf("[KAPITAN] Wypychasz pasazera PID:%d%s\n", 
+        printf(BLUE "[KAPITAN]" RESET "Wypychasz pasazera PID:%d%s\n", 
                p->pid, p->ma_rower ? " [ROWER]" : "");
         fflush(stdout);
         
@@ -142,7 +142,7 @@ int main() {
     sigaction(SIGTERM, &sa_term, NULL);
 
     logger_log(LOG_INFO, EVENT_KAPITAN_START, "Kapitan rozpoczyna prace (PID: %d)", getpid());
-    printf("[KAPITAN] Rozpoczynam prace (PID: %d)\n", getpid());
+    printf(BLUE "[KAPITAN]" RESET" Rozpoczynam prace (PID: %d)\n", getpid());
     fflush(stdout);
 
     //Glowna petla rejsow
@@ -160,7 +160,7 @@ int main() {
             
             logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
                       "SIGUSR2 podczas zaladunku - koncze bez rejsu");
-            printf("[KAPITAN] SIGUSR2 - koncze prace bez rejsu\n");
+            printf(BLUE "[KAPITAN]" RESET "SIGUSR2 - koncze prace bez rejsu\n");
             fflush(stdout);
             break;
         }
@@ -172,7 +172,7 @@ int main() {
             
             logger_log(LOG_INFO, EVENT_KAPITAN_STOP, 
                       "Zakonczono prace (rejsow: %d/%d)", rejsow, R);
-            printf("[KAPITAN] Zakonczono - wykonano %d/%d rejsow\n", rejsow, R);
+            printf(BLUE "[KAPITAN]" RESET "Zakonczono - wykonano %d/%d rejsow\n", rejsow, R);
             fflush(stdout);
             break;
         }
@@ -189,7 +189,7 @@ int main() {
         
         logger_log(LOG_INFO, EVENT_ZALADUNEK_START,
                   "Zaladunek #%d na przystanku %s", rejs_id, get_przystanek_nazwa(przystanek));
-        printf("\n[KAPITAN] === REJS #%d - ZALADUNEK na %s ===\n",
+        printf(BLUE"\n[KAPITAN]"RESET "=== REJS #%d - ZALADUNEK na %s ===\n",
                rejs_id, get_przystanek_nazwa(przystanek));
         fflush(stdout);
         
@@ -219,7 +219,7 @@ int main() {
                 
                 logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
                           "Wczesniejszy odjazd po %d/%d s", sekunda, T1);
-                printf("[KAPITAN] SIGUSR1 - wczesniejszy odjazd po %d/%d s\n", sekunda, T1);
+                printf(BLUE "[KAPITAN]" RESET "SIGUSR1 - wczesniejszy odjazd po %d/%d s\n", sekunda, T1);
                 fflush(stdout);
                 break;
             }
@@ -244,8 +244,8 @@ int main() {
             
             sem_signal(semid, SEM_DYSPOZYTOR_EVENT);
             
-            //Symulacja upływu czasu
-            //sleep(1);
+            //Symulacja uplywu czasu
+            sleep(1);
         }
         
         //Zamknij zaladunek
@@ -269,7 +269,7 @@ int main() {
         int rowerow = wspolne->rowery_na_statku;
         int na_mostku = wspolne->liczba_na_mostku;
         
-        printf("[KAPITAN] Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
+        printf(BLUE "[KAPITAN]" RESET "Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
                pasazerow, rowerow);
         fflush(stdout);
         logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC,
@@ -300,7 +300,7 @@ int main() {
             
             logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
                       "SIGUSR2 - koncze po zaladunku");
-            printf("[KAPITAN] SIGUSR2 - koncze prace\n");
+            printf(BLUE "[KAPITAN]" RESET "SIGUSR2 - koncze prace\n");
             fflush(stdout);
             break;
         }
@@ -329,7 +329,7 @@ int main() {
         
         logger_rejs_event(EVENT_REJS_START, rejsow, pasazerow, rowerow,
                          get_przystanek_nazwa(przystanek));
-        printf("[KAPITAN] REJS #%d START: %s -> %s (%d pasazerow, %d rowerow)\n",
+        printf(BLUE "[KAPITAN]" RESET "REJS #%d START: %s -> %s (%d pasazerow, %d rowerow)\n",
                rejsow, get_przystanek_nazwa(przystanek), cel, pasazerow, rowerow);
         fflush(stdout);
         
@@ -339,11 +339,11 @@ int main() {
                 //SIGUSR2 w trakcie rejsu - kontynuujemy normalnie
                 logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
                           "SIGUSR2 w trakcie rejsu - koncze rejs normalnie");
-                printf("[KAPITAN] SIGUSR2 w trakcie rejsu - dokoncze rejs\n");
+                printf(BLUE "[KAPITAN]" RESET "SIGUSR2 w trakcie rejsu - dokoncze rejs\n");
                 fflush(stdout);
             }
             //Symulacja upływu czasu
-            //sleep(1);
+            sleep(1);
         }
         
         //Dotarcie do celu
@@ -359,9 +359,9 @@ int main() {
         
         logger_rejs_event(EVENT_REJS_KONIEC, rejsow, pasazerow, rowerow,
                          get_przystanek_nazwa(nowy_przystanek));
-        printf("[KAPITAN] REJS #%d KONIEC - dotarlismy do %s\n",
+        printf(BLUE "[KAPITAN]" RESET "REJS #%d KONIEC - dotarlismy do %s\n",
                rejsow, get_przystanek_nazwa(nowy_przystanek));
-        printf("[KAPITAN] Rozpoczynam rozladunek\n");
+        printf(BLUE  "[KAPITAN]" RESET "Rozpoczynam rozladunek\n");
         fflush(stdout);
         
         //Otworz rozladunek
@@ -379,7 +379,7 @@ int main() {
         }
         
         logger_log(LOG_INFO, EVENT_REJS_KONIEC, "Rozladunek zakonczony");
-        printf("[KAPITAN] Rozladunek zakonczony\n");
+        printf(BLUE "[KAPITAN]" RESET "Rozladunek zakonczony\n");
         fflush(stdout);
         
         //Sprawdz czy konczymy po tym rejsie
@@ -389,7 +389,7 @@ int main() {
             wspolne->status_kapitana = STATUS_STOP;
             sem_signal(semid, SEM_MUTEX);
             
-            printf("[KAPITAN] Koncze prace po rejsie #%d\n", rejsow);
+            printf(BLUE "[KAPITAN]" RESET "Koncze prace po rejsie #%d\n", rejsow);
             fflush(stdout);
             break;
         }
@@ -399,7 +399,7 @@ int main() {
     sem_signal(semid, SEM_DYSPOZYTOR_EVENT);
     
     //Obudz wszystkich czekajacych pasazerow zeby mogli zakonczyc
-    printf("[KAPITAN] Budzę oczekujących pasażerów...\n");
+    printf(BLUE "[KAPITAN]" RESET "Budze oczekujacych pasazerow...\n");
     fflush(stdout);
     
     for (int i = 0; i < 200; i++) {
@@ -410,7 +410,7 @@ int main() {
     }
     
     logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan konczy prace");
-    printf("[KAPITAN] Koniec pracy\n");
+    printf(BLUE "[KAPITAN]" RESET "Koniec pracy\n");
     fflush(stdout);
     
     shmdt(wspolne);
