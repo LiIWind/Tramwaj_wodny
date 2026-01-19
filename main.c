@@ -5,10 +5,89 @@ int N = 10, M = 3, K = 3, T1 = 2, T2 = 3, R = 5;
 
 static volatile sig_atomic_t cleanup_flag = 0;
 static int g_semid = -1;
+static int g_shmid = -1;
+static pid_t g_pid_kapitan = -1;
+static pid_t g_pid_dyspozytor = -1;
 
 void cleanup_handler(int sig) {
     (void)sig;
     cleanup_flag = 1;
+}
+
+void cleanup_all_resources(void) {
+    printf("\n[MAIN] Czyszczenie zasobow...\n");
+    
+    // Ustaw flage konca w pamieci dzielonej
+    if (g_shmid != -1) {
+        StanStatku *ws = (StanStatku*)shmat(g_shmid, NULL, 0);
+        if (ws != (void*)-1) {
+            ws->koniec_symulacji = 1;
+            shmdt(ws);
+        }
+    }
+    
+    // Wyslij SIGTERM do kapitana i dyspozytora
+    if (g_pid_kapitan > 0) {
+        kill(g_pid_kapitan, SIGTERM);
+    }
+    if (g_pid_dyspozytor > 0) {
+        kill(g_pid_dyspozytor, SIGTERM);
+    }
+    
+    // Wyslij SIGTERM do wszystkich procesow w grupie (pasazerow)
+    signal(SIGTERM, SIG_IGN);
+    kill(0, SIGTERM);
+    
+    // Usun semafory - to odblokuje wszystkich czekajacych
+    if (g_semid != -1) {
+        printf("[MAIN] Usuwam semafory (semid=%d)...\n", g_semid);
+        if (semctl(g_semid, 0, IPC_RMID) == -1) {
+            if (errno != EIDRM && errno != EINVAL) {
+                perror("Blad usuwania semaforow");
+            }
+        }
+        g_semid = -1;
+    }
+    
+    int wait_count = 0;
+    while (wait_count < 20) {
+        int ret1 = (g_pid_kapitan > 0) ? waitpid(g_pid_kapitan, NULL, WNOHANG) : -1;
+        int ret2 = (g_pid_dyspozytor > 0) ? waitpid(g_pid_dyspozytor, NULL, WNOHANG) : -1;
+        if ((ret1 != 0 || ret1 == -1) && (ret2 != 0 || ret2 == -1)) {
+            break;
+        }
+        wait_count++;
+    }
+    
+    if (g_pid_kapitan > 0) {
+        kill(g_pid_kapitan, SIGKILL);
+        waitpid(g_pid_kapitan, NULL, 0);
+        g_pid_kapitan = -1;
+    }
+    if (g_pid_dyspozytor > 0) {
+        kill(g_pid_dyspozytor, SIGKILL);
+        waitpid(g_pid_dyspozytor, NULL, 0);
+        g_pid_dyspozytor = -1;
+    }
+    
+    // Zbierz pozostale procesy zombie
+    while (waitpid(-1, NULL, WNOHANG) > 0) {}
+    
+    // Usun pamiec dzielona
+    if (g_shmid != -1) {
+        printf("[MAIN] Usuwam pamiec dzielona (shmid=%d)...\n", g_shmid);
+        if (shmctl(g_shmid, IPC_RMID, NULL) == -1) {
+            if (errno != EIDRM && errno != EINVAL) {
+                perror("Blad usuwania pamieci dzielonej");
+            }
+        }
+        g_shmid = -1;
+    }
+    
+    // Usun plik konfiguracyjny
+    unlink("/tmp/tramwaj_config.txt");
+    
+    printf("[MAIN] Zasoby wyczyszczone.\n");
 }
 
 //zbiera procesy zombie
@@ -89,7 +168,7 @@ int main() {
     if (wspolne == (void*)-1) {
         perror("Blad shmat");
         logger_error_errno(EVENT_BLAD_SYSTEM, "Blad przyłączania pamieci dzielonej");
-        shmctl(shmid, IPC_RMID, NULL);
+        cleanup_all_resources();
         logger_close();
         exit(1);
     }
@@ -104,7 +183,7 @@ int main() {
     if (semid == -1) {
         perror("Blad semget");
         logger_error_errno(EVENT_BLAD_SYSTEM, "Blad tworzenia semaforow");
-        shmctl(shmid, IPC_RMID, NULL);
+        cleanup_all_resources();
         logger_close();
         exit(1);
     }
@@ -135,8 +214,7 @@ int main() {
     if (pid_kapitan == -1) {
         perror("Blad fork kapitana");
         logger_error_errno(EVENT_BLAD_SYSTEM, "Blad tworzenia procesu kapitana");
-        semctl(semid, 0, IPC_RMID);
-        shmctl(shmid, IPC_RMID, NULL);
+        cleanup_all_resources();
         logger_close();
         exit(1);
     }
@@ -147,6 +225,8 @@ int main() {
         perror("Blad execl kapitana");
         exit(1);
     }
+
+    g_pid_kapitan = pid_kapitan;
     
     logger_log(LOG_INFO, EVENT_KAPITAN_START, "Uruchomiono kapitana (PID: %d)", pid_kapitan);
     
@@ -156,8 +236,7 @@ int main() {
         perror("Blad fork dyspozytora");
         logger_error_errno(EVENT_BLAD_SYSTEM, "Blad tworzenia procesu dyspozytora");
         kill(pid_kapitan, SIGTERM);
-        semctl(semid, 0, IPC_RMID);
-        shmctl(shmid, IPC_RMID, NULL);
+        cleanup_all_resources();
         logger_close();
         exit(1);
     }
@@ -168,6 +247,8 @@ int main() {
         perror("Blad execl dyspozytora");
         exit(1);
     }
+
+    g_pid_dyspozytor = pid_dyspozytor;
     
     logger_log(LOG_INFO, EVENT_DYSPOZYTOR_START, "Uruchomiono dyspozytora (PID: %d)", pid_dyspozytor);
     
@@ -180,10 +261,8 @@ int main() {
     wspolne = (StanStatku*)shmat(shmid, NULL, 0);
     if (wspolne == (void*)-1) {
         perror("Blad shmat");
-        kill(pid_kapitan, SIGTERM);
-        kill(pid_dyspozytor, SIGTERM);
-        semctl(semid, 0, IPC_RMID);
-        shmctl(shmid, IPC_RMID, NULL);
+        logger_error_errno(EVENT_BLAD_SYSTEM, "Blad przylaczania pamieci dzielonej przed generowaniem pasazerow");
+        cleanup_all_resources();
         logger_close();
         exit(1);
     }
@@ -202,7 +281,13 @@ int main() {
         pid_t pid = fork();
         if (pid == -1) {
             perror("Blad fork pasazera");
-            continue;
+            logger_error_errno(EVENT_BLAD_SYSTEM, "Blad tworzenia procesu pasazera");
+            printf("[MAIN] Blad fork pasazera - czyszcze zasoby i koncze...\n");
+            shmdt(wspolne);
+            cleanup_all_resources();
+            logger_log(LOG_ERROR, EVENT_BLAD_SYSTEM, "Zakonczenie z powodu bledu fork");
+            logger_close();
+            exit(1);
         }
         
         if (pid == 0) {

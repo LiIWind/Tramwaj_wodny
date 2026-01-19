@@ -246,13 +246,12 @@ int main() {
             sem_signal(semid, SEM_DYSPOZYTOR_EVENT);
             
             //Symulacja uplywu czasu
-            sleep(1);
+            //sleep(1);
         }
         
         //Zamknij zaladunek
         sem_wait(semid, SEM_MUTEX);
         wspolne->zaladunek_otwarty = 0;
-        sem_signal(semid, SEM_MUTEX);
         
         for (int i = 0; i < 200; i++) {
             sem_trywait(semid, sem_zaladunek);
@@ -261,20 +260,16 @@ int main() {
         for (int i = 0; i < 200; i++) {
             sem_trywait(semid, SEM_WEJSCIE);
         }
-        
-        sem_wait(semid, SEM_MUTEX);
-        
-        wypchnij_z_mostka(semid, wspolne);
 
         int pasazerow = wspolne->pasazerowie_na_statku;
         int rowerow = wspolne->rowery_na_statku;
         int na_mostku = wspolne->liczba_na_mostku;
         
-        printf(BLUE "[KAPITAN]" RESET "Zaladunek zakonczony: %d pasazerow, %d rowerow\n", 
-               pasazerow, rowerow);
+        printf(BLUE "[KAPITAN]" RESET "Zaladunek zakonczony: %d pasazerow, %d rowerow, %d na mostku\n", 
+               pasazerow, rowerow, na_mostku);
         fflush(stdout);
         logger_log(LOG_INFO, EVENT_ZALADUNEK_KONIEC,
-                  "Zaladunek zakonczony: %d pasazerow, %d rowerow", pasazerow, rowerow);
+                  "Zaladunek zakonczony: %d pasazerow, %d rowerow, %d na mostku", pasazerow, rowerow, na_mostku);
 
         if (na_mostku > 0) {
             wypchnij_z_mostka(semid, wspolne);
@@ -284,7 +279,7 @@ int main() {
         if (koniec_pracy) {
             wspolne->koniec_symulacji = 1;
             wspolne->status_kapitana = STATUS_STOP;
-            
+            printf(BLUE "[KAPITAN]" RESET "Koniec rejsow na dzisiaj prosze opuscic statek\n");
             //Jesli sa pasazerowie na statku to musza wysiasc
             if (pasazerow > 0) {
                 wspolne->pasazerow_do_rozladunku = pasazerow;
@@ -344,7 +339,7 @@ int main() {
                 fflush(stdout);
             }
             //Symulacja upływu czasu
-            sleep(1);
+            //sleep(1);
         }
         
         //Dotarcie do celu
