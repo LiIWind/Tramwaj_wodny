@@ -140,6 +140,7 @@ int main() {
     sigemptyset(&sa_term.sa_mask);
     sa_term.sa_flags = 0;
     sigaction(SIGTERM, &sa_term, NULL);
+    sigaction(SIGINT, &sa_term, NULL);
 
     logger_log(LOG_INFO, EVENT_KAPITAN_START, "Kapitan rozpoczyna prace (PID: %d)", getpid());
     printf(BLUE "[KAPITAN]" RESET" Rozpoczynam prace (PID: %d)\n", getpid());
@@ -199,7 +200,7 @@ int main() {
                           ? SEM_ZALADUNEK_WAWEL 
                           : SEM_ZALADUNEK_TYNIEC;
         //Otworz zaladunek
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < N; i++) {
             sem_signal(semid, sem_zaladunek);
         }
         

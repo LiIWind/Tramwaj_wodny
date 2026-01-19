@@ -86,6 +86,7 @@ int main() {
     sigemptyset(&sa_term.sa_mask);
     sa_term.sa_flags = 0;
     sigaction(SIGTERM, &sa_term, NULL);
+    sigaction(SIGINT, &sa_term, NULL);
     
     key_t key = ftok(PATH_NAME, PROJECT_ID);
     if (key == -1) {

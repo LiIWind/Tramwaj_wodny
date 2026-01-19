@@ -4,10 +4,22 @@
 int N = 10, M = 3, K = 3, T1 = 2, T2 = 3, R = 5;
 
 static volatile sig_atomic_t cleanup_flag = 0;
+static int g_semid = -1;
 
 void cleanup_handler(int sig) {
     (void)sig;
     cleanup_flag = 1;
+}
+
+//zbiera procesy zombie
+void sigchld_handler(int sig) {
+    (void)sig;
+    int saved_errno = errno;
+    
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        
+    }
+    errno = saved_errno;
 }
 
 int main() {
@@ -49,6 +61,13 @@ int main() {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
+
+    struct sigaction sa_chld;
+    sa_chld.sa_handler = sigchld_handler;
+    sigemptyset(&sa_chld.sa_mask);
+    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP; // SA_RESTART - nie przerywaj funkcji systemowych, SA_NOCLDSTOP - nie sygnalizuj zatrzymania (tylko zakończenie)
+    
+    sigaction(SIGCHLD, &sa_chld, NULL);
     
     key_t key = ftok(PATH_NAME, PROJECT_ID);
     if (key == -1) {
@@ -90,6 +109,8 @@ int main() {
         exit(1);
     }
     
+    g_semid = semid; 
+
     //inicjalizacja semaforów
     sem_setval(semid, SEM_MUTEX, 1);
     sem_setval(semid, SEM_MOSTEK, K);
@@ -121,6 +142,7 @@ int main() {
     }
     
     if (pid_kapitan == 0) {
+        signal(SIGCHLD, SIG_DFL);
         execl("./kapitan", "kapitan", NULL);
         perror("Blad execl kapitana");
         exit(1);
@@ -141,6 +163,7 @@ int main() {
     }
     
     if (pid_dyspozytor == 0) {
+        signal(SIGCHLD, SIG_DFL);
         execl("./dyspozytor", "dyspozytor", NULL);
         perror("Blad execl dyspozytora");
         exit(1);
@@ -151,7 +174,7 @@ int main() {
     //generowanie pasazerow
     printf("Generowanie pasazerow...\n\n");
     
-    int liczba_pasazerow = 500;
+    int liczba_pasazerow = 10000;
     int wygenerowano = 0;
     
     wspolne = (StanStatku*)shmat(shmid, NULL, 0);
@@ -183,6 +206,7 @@ int main() {
         }
         
         if (pid == 0) {
+            signal(SIGCHLD, SIG_DFL);
             execl("./pasazer", "pasazer", NULL);
             perror("Blad execl pasazera");
             exit(1);
@@ -198,33 +222,91 @@ int main() {
     logger_log(LOG_INFO, EVENT_SYSTEM_START, "Wygenerowano %d pasazerow", wygenerowano);
     
     printf("Czekam na zakonczenie kapitana i dyspozytora...\n");
+
+    sigset_t block_chld, old_mask;
+    sigemptyset(&block_chld);
+    sigaddset(&block_chld, SIGCHLD);
     
-    waitpid(pid_kapitan, NULL, 0);
-    logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan zakonczyl prace");
+    sigprocmask(SIG_BLOCK, &block_chld, &old_mask);
+     
+    if (cleanup_flag) {
+        // Ustaw flage konca w pamieci dzielonej
+        StanStatku *ws = (StanStatku*)shmat(shmid, NULL, 0);
+        if (ws != (void*)-1) {
+            ws->koniec_symulacji = 1;
+            shmdt(ws);
+        }
+        
+        // Wyslij SIGTERM do kapitana i dyspozytora
+        kill(pid_kapitan, SIGTERM);
+        kill(pid_dyspozytor, SIGTERM);
+        
+        // Wyslij SIGTERM do wszystkich pasazerow
+        signal(SIGTERM, SIG_IGN);
+        kill(0, SIGTERM);
+        
+        // Usun semafory - to odblokuje wszystkich czekajacych
+        printf("Usuwam semafory aby odblokowac procesy...\n");
+        if (semctl(semid, 0, IPC_RMID) == -1) {
+            if (errno != EIDRM && errno != EINVAL) {
+                perror("Blad usuwania semaforow");
+            }
+        }
+        g_semid = -1;
+        
+        // Czekaj na kapitana i dyspozytora z krotkim timeoutem
+        int wait_count = 0;
+        while (wait_count < 20) {
+            int ret1 = waitpid(pid_kapitan, NULL, WNOHANG);
+            int ret2 = waitpid(pid_dyspozytor, NULL, WNOHANG);
+            if ((ret1 != 0 || ret1 == -1) && (ret2 != 0 || ret2 == -1)) {
+                break;
+            }
+            wait_count++;
+        }
+        
+        // Jesli nadal dzialaja, wyslij SIGKILL
+        kill(pid_kapitan, SIGKILL);
+        kill(pid_dyspozytor, SIGKILL);
+        waitpid(pid_kapitan, NULL, 0);
+        waitpid(pid_dyspozytor, NULL, 0);
+        
+    } else {
+        // Normalne zakonczenie - czekaj na kapitana i dyspozytora
+        int status;
+        waitpid(pid_kapitan, &status, 0);
+        logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan zakonczyl prace");
+        
+        waitpid(pid_dyspozytor, &status, 0);
+        logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP, "Dyspozytor zakonczyl prace");
+    }
     
-    waitpid(pid_dyspozytor, NULL, 0);
-    logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP, "Dyspozytor zakonczyl prace");
+    sigprocmask(SIG_SETMASK, &old_mask, NULL);
     
-    printf("Wysyłam SIGTERM do pasazerow...\n");
-    signal(SIGTERM, SIG_IGN);
-    kill(0, SIGTERM);
-    
+    // Wyslij SIGTERM do pozostalych pasazerow (jesli jeszcze nie wyslano)
+    if (!cleanup_flag) {
+        printf("Wysyłam SIGTERM do pasazerow...\n");
+        signal(SIGTERM, SIG_IGN);
+        kill(0, SIGTERM);
+    }
+
     printf("Czekam na zakończenie pasazerow...\n");
     
     int zakonczone = 0;
     time_t start_wait = time(NULL);
     
     while (time(NULL) - start_wait < 5) {
-        pid_t child = waitpid(-1, NULL, WNOHANG);
-        if (child > 0) {
+        pid_t child;
+        while ((child = waitpid(-1, NULL, WNOHANG)) > 0) {
             zakonczone++;
-        } else if (child == -1 && errno == ECHILD) {
+        }
+        if (child == -1 && errno == ECHILD) {
             break;
         }
-        //usleep(10000);
     }
-    
-    printf("Zakonczono %d procesow potomnych\n\n", zakonczone);
+
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+    }
     
     wspolne = (StanStatku*)shmat(shmid, NULL, 0);
     if (wspolne != (void*)-1) {
