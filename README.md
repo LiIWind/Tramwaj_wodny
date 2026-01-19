@@ -254,4 +254,28 @@ Główna pętla kapitana:
 
 ## 5. Testy
 
-### 5.1 **Test nr. 1 ***
+### 5.1 **Test nr. 3**
+Opuszczanie mostka od ostatniego w kolejce
+Oczekiwanie: Pasażerowie będący na mostku po skończonym załadunku opuszczają go od ostatniego
+Wynik: Sukces
+
+### 5.2 **Test nr. 2 **
+Test sygnału do wcześniejszego odpłynięcia
+Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, wypchnie pasażerów z mostka od ostatniego i rozpocznie rejs
+Wynik: Sukces
+
+### 5.3 **Test nr. 3**
+Test sygnału do zakończenia pracy podczas załadunku
+Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, a pasażerowie opuszczą statek, a następnie kapitan oraz dyspozytor zakończą pracę
+Wynik: Sukces
+
+### 5.4 ***Test nr. 5**
+Test sygnału do zakończenia pracy podczas rejsu
+Oczekiwanie: Dyspozytor wyśle sygnał do końca pracy podczas rejsu, a kapitan dokończy rejs i po rozładunku zakończy pracę
+Wynik: Sukces
+
+### 5.5 **Test nr. 4**
+Test miejsc rowerów
+Założenia: miejsca na rowery (M) ustawione na 1
+Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie znajduję się rower i wysyła komunikat `Brak miejsca na rower - czekam na nastepny rejs`
+Wynik: Sukces
