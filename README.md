@@ -65,6 +65,18 @@ Wszystkie wprowadzane parametry są walidowane:
 - K musi być mniejsze od N
 - Nieprawidłowe dane powodują wyświetlenie komunikatu błędu i ponowne zapytanie
 
+### 2.5 Pliki projektu
+
+| Plik | Opis |
+|------|------|
+| common.h | Definicje struktur, stałych, funkcji pomocniczych |
+| logger.h | Nagłówek modułu logowania |
+| logger.c | Implementacja systemu logowania |
+| main.c | Proces główny - inicjalizacja i zarządzanie |
+| kapitan.c | Logika kapitana statku |
+| dyspozytor.c | Logika dyspozytora (wysyłanie sygnałów) |
+| pasazer.c | Logika pojedynczego pasażera |
+
 ---
 
 ## 3. Opis implementacji
@@ -175,6 +187,7 @@ System obsługuje sygnały:
 9. Czeka na rozładunek
 10. Schodzi ze statku
 ```
+
 #### 3.2.3 Algorytm wypychania pasażerów z mostka
 
 ```
@@ -188,5 +201,57 @@ System obsługuje sygnały:
 3. Zeruje kolejke na mostku
 ```
 
-### 3.3 Logowanie
+---
 
+## 4. Opis implementacji
+
+### 4.1 Proces główny main.c
+
+1. Wczytuje parametry od użytkownika z walidacją
+2. Tworzy pamięć dzieloną i semafory
+3. Uruchamia proces kapitana (fork() i exec())
+4. Uruchamia proces dyspozytora (fork() i exec())
+5. Generuje procesy pasażerów (10000 procesów)
+6. Czeka na zakończenie kapitana i dyspozytora
+7. Generuje raport końcowy
+8. Czyści zasoby
+
+### 4.2 Proces kapitana
+
+Główna pętla kapitana:
+
+1. Otwórz załadunek
+2. Przez T1 czasu wpuszczaj pasażerów
+3. Zamknij załadunek
+4. Wypchnij pasażerów z mostka
+5. Rozpocznij rejs i płyń przez T2 czasu
+6. Dotrzyj do celu
+7. Rozładuj pasażerów
+8. Powtórz
+
+### 4.3 Proces dyspozytora
+
+1. Monitoruj przebieg symulacji
+2. Wyślij sygnał do wcześniejszego odjazdu po 2 rejsach
+3. Wyślij sygnal do końca pracy po 75% rejsów
+
+### 4.4 Proces pasażera
+
+1. Przybądz na losowy przystanek z rowerem lub bez
+2. Czekaj na otwarcie załadunku
+3. Rezerwuj miejsce na statku
+4. Rezerwuj miejsce na mostku
+5. Wejdź na mostek
+6. Czekaj na pozwolenie wejścia na statek
+7. Wejdź na statek
+8. Zwolnij miejsce na mostku
+9. Czekaj na rozładunek
+10. Zejdź ze statku
+11. Zwolnij miejsce na statku
+12. Koniec
+
+---
+
+## 5. Testy
+
+### 5.1 **Test nr. 1 ***
