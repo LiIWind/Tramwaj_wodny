@@ -2,7 +2,7 @@
 
 **Autor** Paweł Drabik  
 **Numer albumu** 155171  
-**Repozytorium Github:** [https://github.com/LiIWind/Tramwaj_wodny]  
+[**Repozytorium Github**](https://github.com/LiIWind/Tramwaj_wodny)  
 
 ---
 
@@ -31,9 +31,9 @@ przystanku w Tyńcu lub w Krakowie.
 
 ### 2.1 Założenia zadania
 - Pasażerowie przybywają na przystanki Wawel lub Tyniec losowo (50% szans)
-- Pasażer może mieć rower (30& szans)
+- Pasażer może mieć rower (30% szans)
 - Na tramwaj może wejść maksymalnie N pasażerów
-- Na mostku może znajnować się jednocześnie M pasazerow
+- Na mostku może znajdować się jednocześnie K pasazerow
 - Pasażer z rowerem zajmuje 2 miejsca na mostku
 - Kapitan musi dopilnować, aby na mostku nie było żadnego pasażera w momencie odpływania
 - Pasażerowie obecni na mostku podczas odpływania muszą go opuścić zaczynając od ostatniego w kolejce
@@ -45,10 +45,10 @@ przystanku w Tyńcu lub w Krakowie.
 
 ### 2.2 Architektura systemu
 System oparty jest na architekturze wieloprocesowej z następującymi procesami:
--Main - Proces główny - tworzy zasoby IPC oraz uruchamia pozostałe procesy
--Kapitan - Zarządza statkiem, załadunkiem oraz rozładunkiem pasażerów
--Dyspozytor - Monitoruje symulację oraz wysyła sygnały do kapitana
--Pasażer - Próbuje wejść na statek
+- Main - Proces główny - tworzy zasoby IPC oraz uruchamia pozostałe procesy
+- Kapitan - Zarządza statkiem, załadunkiem oraz rozładunkiem pasażerów
+- Dyspozytor - Monitoruje symulację oraz wysyła sygnały do kapitana
+- Pasażer - Próbuje wejść na statek
 
 ![schemat](img/schemat.png)
 
@@ -240,7 +240,7 @@ Główna pętla kapitana:
 
 ### 4.4 Proces pasażera
 
-1. Przybądz na losowy przystanek z rowerem lub bez
+1. Przybądź na losowy przystanek z rowerem lub bez
 2. Czekaj na otwarcie załadunku
 3. Rezerwuj miejsce na statku
 4. Rezerwuj miejsce na mostku
@@ -438,7 +438,7 @@ Wynik: Sukces
 
 ![test_sigusr2_zaladunek](img/test_sigusr2.png)
 
-### 6.4 **Test nr. 5**
+### 6.4 **Test nr. 4**
 Test sygnału do zakończenia pracy podczas rejsu
 Oczekiwanie: Dyspozytor wyśle sygnał do końca pracy podczas rejsu, a kapitan dokończy rejs i po rozładunku zakończy pracę
 
@@ -446,7 +446,7 @@ Wynik: Sukces
 
 ![test_sigusr2_rejs](img/test_sigusr2_rejs.png)
 
-### 6.5 **Test nr. 4**
+### 6.5 **Test nr. 5**
 Test miejsc rowerów
 Założenia: miejsca na rowery (M) ustawione na 1
 Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie znajduję się rower i wysyła komunikat `Brak miejsca na rower - czekam na nastepny rejs`
@@ -457,9 +457,9 @@ Wynik: Sukces
 
 ---
 
-## 6. Co udało się zrealizować
+## 7. Co udało się zrealizować
 
-### 6.1 Zrealizowane funkcjonalności
+### 7.1 Zrealizowane funkcjonalności
 
 - ✅ Pełna implementacja symulacji tramwaju wodnego zgodna ze specyfikacją
 - ✅ Wieloprocesowa architektura z użyciem fork() i exec()
@@ -473,30 +473,30 @@ Wynik: Sukces
 - ✅ Raport końcowy z statystykami
 - ✅ Czyszczenie zasobów IPC przy zakończeniu
 
-### 6.2 Elementy wyróżniające
+### 7.2 Elementy wyróżniające
 
 - **Kolorowe wyjścia w terminalu** - procesy kapitana, dyspozytora oraz pasażera są wyraźnie rozróżnialne
 - **System logowania** - zdarzenia są zapisywane do pliku .log z timestampami
 
 ---
 
-## 7. Napotkane problemy
+## 8. Napotkane problemy
 
-### 7.1 Procesy zombie
+### 8.1 Procesy zombie
 Duża liczba procesów pasażerów (10000) powodowała gromadzenie się zombie.
 
 **Rozwiązanie:** Implementacja aktywnego zbierania zombie przez `waitpid(WNOHANG)` co 100 pasażerów oraz handler `SIGCHLD`.
 
-### 7.2 Problem przy sprawdzaniu ostatniego pasażera
+### 8.2 Problem przy sprawdzaniu ostatniego pasażera
 Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 
-**Rozwiązanie:** Dodaniew sprawdzenia `pasazerow_do_rozladunku == 0` do wnętrza sekcji krytycznej.
+**Rozwiązanie:** Dodanie sprawdzenia `pasazerow_do_rozladunku == 0` do wnętrza sekcji krytycznej.
 
 ---
 
-## 8. Linki do fragmentów kodu
+## 9. Linki do fragmentów kodu
 
-### 8.1 Tworzenie i obsługa plików (open(), close(), read(), write(), unlink())
+### 9.1 Tworzenie i obsługa plików (open(), close(), read(), write(), unlink())
 
 | Funkcja | Plik | Link |
 |---------|------|------|
@@ -506,7 +506,7 @@ Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 | unlink() - usunięcie pliku | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L517) |
 | fopen/fscanf/fclose - plik konfiguracji | common.h | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/common.h#L283-L296) |
 
-### 8.2 Tworzenie i obsługa procesów (fork(), exec(), exit(), wait())
+### 9.2 Tworzenie i obsługa procesów (fork(), exec(), exit(), wait())
 
 | Funkcja | Plik | Link |
 |---------|------|------|
@@ -517,7 +517,7 @@ Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 | waitpid() - czekanie na procesy | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L385-L388) |
 | exit() - zakończenie procesu | pasazer.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/pasazer.c#L117) |
 
-### 8.3 Obsługa sygnałów (kill(), signal(), sigaction())
+### 9.3 Obsługa sygnałów (kill(), signal(), sigaction())
 
 | Funkcja | Plik | Link |
 |---------|------|------|
@@ -527,7 +527,7 @@ Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 | kill() - wypychanie pasażera | kapitan.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/kapitan.c#L56) |
 | signal() - ignorowanie SIGTERM | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L349) |
 
-### 8.4 Synchronizacja procesów (ftok(), semget(), semctl(), semop())
+### 9.4 Synchronizacja procesów (ftok(), semget(), semctl(), semop())
 
 | Funkcja | Plik | Link |
 |---------|------|------|
@@ -537,7 +537,7 @@ Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 | semctl(IPC_RMID) - usuwanie | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L505-L509) |
 | semop() - operacje P/V | common.h | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/common.h#L106-L114) |
 
-### 8.5 Segmenty pamięci dzielonej (ftok(), shmget(), shmat(), shmdt(), shmctl())
+### 9.5 Segmenty pamięci dzielonej (ftok(), shmget(), shmat(), shmdt(), shmctl())
 
 | Funkcja | Plik | Link |
 |---------|------|------|
@@ -548,7 +548,7 @@ Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
 
 ---
 
-## 9. Struktura plików
+## 10. Struktura plików
 
 ```
 tramwaj_wodny/
@@ -573,7 +573,7 @@ tramwaj_wodny/
 
 ---
 
-### 10. Podsumowanie
+### 11. Podsumowanie
 
 Projekt tematu nr. 11 "Tramwaj wodny" zrealizowany zgodnie ze specyfikacją oraz wymaganiami projektowymi.
 Zaimplementowano wszystkie wymagane funkcjonalności tj.:
