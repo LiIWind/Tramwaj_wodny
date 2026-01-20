@@ -1,6 +1,7 @@
 #include "logger.h"
 #include "common.h"
 
+
 static FILE *log_file = NULL;
 static int logger_semid = -1;
 

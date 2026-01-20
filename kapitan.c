@@ -211,12 +211,8 @@ int main() {
                 wspolne->zaladunek_otwarty = 0;
                 sem_signal(semid, SEM_MUTEX);
                 
-                for (int i = 0; i < 200; i++) {
-                    sem_trywait(semid, sem_zaladunek);
-                }
-                for (int i = 0; i < 200; i++) {
-                    sem_trywait(semid, SEM_WEJSCIE);
-                }
+                sem_reset(semid, sem_zaladunek, 0);
+                sem_reset(semid, SEM_WEJSCIE, 0);
                 
                 logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
                           "Wczesniejszy odjazd po %d/%d s", sekunda, T1);
@@ -253,13 +249,8 @@ int main() {
         sem_wait(semid, SEM_MUTEX);
         wspolne->zaladunek_otwarty = 0;
         
-        for (int i = 0; i < 200; i++) {
-            sem_trywait(semid, sem_zaladunek);
-        }
-        
-        for (int i = 0; i < 200; i++) {
-            sem_trywait(semid, SEM_WEJSCIE);
-        }
+        sem_reset(semid, sem_zaladunek, 0);
+        sem_reset(semid, SEM_WEJSCIE, 0);
 
         int pasazerow = wspolne->pasazerowie_na_statku;
         int rowerow = wspolne->rowery_na_statku;
@@ -369,9 +360,7 @@ int main() {
             //Czekaj az ostatni pasazer zejdzie
             sem_wait(semid, SEM_ROZLADUNEK_KONIEC);
             
-            for (int i = 0; i < pasazerow + 10; i++) {
-                sem_trywait(semid, SEM_ROZLADUNEK);
-            }
+            sem_reset(semid, SEM_ROZLADUNEK, 0);
         }
         
         logger_log(LOG_INFO, EVENT_REJS_KONIEC, "Rozladunek zakonczony");

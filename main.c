@@ -70,7 +70,19 @@ void cleanup_all_resources(void) {
         g_pid_dyspozytor = -1;
     }
     
-    // Zbierz pozostale procesy zombie
+    // Zbierz pozostale procesy zombie - agresywnie
+    int bez_zmian = 0;
+    while (bez_zmian < 1000) {
+        pid_t child = waitpid(-1, NULL, WNOHANG);
+        if (child > 0) {
+            bez_zmian = 0;
+        } else if (child == -1 && errno == ECHILD) {
+            break;
+        } else {
+            bez_zmian++;
+        }
+    }
+    //Ostateczne zbieranie
     while (waitpid(-1, NULL, WNOHANG) > 0) {}
     
     // Usun pamiec dzielona
@@ -96,9 +108,16 @@ void sigchld_handler(int sig) {
     int saved_errno = errno;
     
     while (waitpid(-1, NULL, WNOHANG) > 0) {
-        
+        //zbieramy wszystkie zakończone procesy
     }
     errno = saved_errno;
+}
+
+//Aktywne zbieranie zombie
+static void zbierz_zombie(void) {
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        //zbieramy wszystkie dostępne zombie
+    }
 }
 
 int main() {
@@ -188,7 +207,7 @@ int main() {
         exit(1);
     }
     
-    g_semid = semid; 
+    g_semid = semid;
 
     //inicjalizacja semaforów
     sem_setval(semid, SEM_MUTEX, 1);
@@ -268,6 +287,11 @@ int main() {
     }
     
     for (int i = 0; i < liczba_pasazerow && !cleanup_flag; i++) {
+        //Aktywne zbieranie zombie co 100 pasażerów
+        if (i % 100 == 0) {
+            zbierz_zombie();
+        }
+        
         //sprawdz czy symulacja sie skonczyla
         sem_wait(semid, SEM_MUTEX);
         int koniec = wspolne->koniec_symulacji;
@@ -278,6 +302,7 @@ int main() {
             break;
         }
         
+        logger_close();
         pid_t pid = fork();
         if (pid == -1) {
             perror("Blad fork pasazera");
@@ -307,12 +332,6 @@ int main() {
     logger_log(LOG_INFO, EVENT_SYSTEM_START, "Wygenerowano %d pasazerow", wygenerowano);
     
     printf("Czekam na zakonczenie kapitana i dyspozytora...\n");
-
-    sigset_t block_chld, old_mask;
-    sigemptyset(&block_chld);
-    sigaddset(&block_chld, SIGCHLD);
-    
-    sigprocmask(SIG_BLOCK, &block_chld, &old_mask);
      
     if (cleanup_flag) {
         // Ustaw flage konca w pamieci dzielonej
@@ -339,34 +358,85 @@ int main() {
         }
         g_semid = -1;
         
-        // Czekaj na kapitana i dyspozytora z krotkim timeoutem
+        // Aktywnie zbiera zombie podczas oczekiwania
         int wait_count = 0;
-        while (wait_count < 20) {
-            int ret1 = waitpid(pid_kapitan, NULL, WNOHANG);
-            int ret2 = waitpid(pid_dyspozytor, NULL, WNOHANG);
-            if ((ret1 != 0 || ret1 == -1) && (ret2 != 0 || ret2 == -1)) {
-                break;
+        int kapitan_zakonczony = 0;
+        int dyspozytor_zakonczony = 0;
+        
+        while (wait_count < 100 && (!kapitan_zakonczony || !dyspozytor_zakonczony)) {
+            zbierz_zombie();
+            
+            if (!kapitan_zakonczony) {
+                int ret = waitpid(pid_kapitan, NULL, WNOHANG);
+                if (ret == pid_kapitan || ret == -1) {
+                    kapitan_zakonczony = 1;
+                }
+            }
+            if (!dyspozytor_zakonczony) {
+                int ret = waitpid(pid_dyspozytor, NULL, WNOHANG);
+                if (ret == pid_dyspozytor || ret == -1) {
+                    dyspozytor_zakonczony = 1;
+                }
             }
             wait_count++;
         }
         
         // Jesli nadal dzialaja, wyslij SIGKILL
-        kill(pid_kapitan, SIGKILL);
-        kill(pid_dyspozytor, SIGKILL);
-        waitpid(pid_kapitan, NULL, 0);
-        waitpid(pid_dyspozytor, NULL, 0);
+        if (!kapitan_zakonczony) {
+            kill(pid_kapitan, SIGKILL);
+            waitpid(pid_kapitan, NULL, 0);
+        }
+        if (!dyspozytor_zakonczony) {
+            kill(pid_dyspozytor, SIGKILL);
+            waitpid(pid_dyspozytor, NULL, 0);
+        }
         
     } else {
-        // Normalne zakonczenie - czekaj na kapitana i dyspozytora
-        int status;
-        waitpid(pid_kapitan, &status, 0);
-        logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan zakonczyl prace");
+        // Normalne zakonczenie - czekaj na kapitana i dyspozytora ze zbieraniem zombie
+        int kapitan_zakonczony = 0;
+        int dyspozytor_zakonczony = 0;
         
-        waitpid(pid_dyspozytor, &status, 0);
-        logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP, "Dyspozytor zakonczyl prace");
+        while (!kapitan_zakonczony || !dyspozytor_zakonczony) {
+            zbierz_zombie();
+            
+            if (!kapitan_zakonczony) {
+                int ret = waitpid(pid_kapitan, NULL, WNOHANG);
+                if (ret == pid_kapitan) {
+                    kapitan_zakonczony = 1;
+                    logger_log(LOG_INFO, EVENT_KAPITAN_STOP, "Kapitan zakonczyl prace");
+                } else if (ret == -1 && errno != EINTR) {
+                    kapitan_zakonczony = 1;
+                }
+            }
+            if (!dyspozytor_zakonczony) {
+                int ret = waitpid(pid_dyspozytor, NULL, WNOHANG);
+                if (ret == pid_dyspozytor) {
+                    dyspozytor_zakonczony = 1;
+                    logger_log(LOG_INFO, EVENT_DYSPOZYTOR_STOP, "Dyspozytor zakonczyl prace");
+                } else if (ret == -1 && errno != EINTR) {
+                    dyspozytor_zakonczony = 1;
+                }
+            }
+        }
     }
-    
-    sigprocmask(SIG_SETMASK, &old_mask, NULL);
+
+    wspolne = (StanStatku*)shmat(shmid, NULL, 0);
+    if (wspolne != (void*)-1) {
+        sem_wait(semid, SEM_MUTEX);
+        
+        int przewiezieni = wspolne->total_pasazerow_wawel + wspolne->total_pasazerow_tyniec;
+        int juz_odrzuceni = wspolne->pasazerow_odrzuconych;
+        
+        // Pasażerowie którzy nie zdążyli się zliczyć = wygenerowano - przewiezieni - już_odrzuceni
+        // To są ci którzy czekają na semaforach i zostaną zabici przez SIGTERM
+        int niezliczeni = wygenerowano - przewiezieni - juz_odrzuceni;
+        if (niezliczeni > 0) {
+            wspolne->pasazerow_odrzuconych += niezliczeni;
+        }
+        
+        sem_signal(semid, SEM_MUTEX);
+        shmdt(wspolne);
+    }
     
     // Wyslij SIGTERM do pozostalych pasazerow (jesli jeszcze nie wyslano)
     if (!cleanup_flag) {
@@ -377,25 +447,41 @@ int main() {
 
     printf("Czekam na zakończenie pasazerow...\n");
     
+    //Agresywne zbieranie wszystkich zombie
     int zakonczone = 0;
-    time_t start_wait = time(NULL);
+    int poprzednie_zakonczone = -1;
+    int bez_zmian = 0;
     
-    while (time(NULL) - start_wait < 5) {
+    //Zbieraj dopóki są zombie do zebrania
+    while (bez_zmian < 1000) {
+        poprzednie_zakonczone = zakonczone;
+        
         pid_t child;
         while ((child = waitpid(-1, NULL, WNOHANG)) > 0) {
             zakonczone++;
         }
+        
         if (child == -1 && errno == ECHILD) {
+            //Nie ma więcej procesów potomnych
             break;
         }
+        
+        if (zakonczone == poprzednie_zakonczone) {
+            bez_zmian++;
+        } else {
+            bez_zmian = 0;
+        }
     }
-
+    
+    //Ostateczne zbieranie
     while (waitpid(-1, NULL, WNOHANG) > 0) {
+        zakonczone++;
     }
     
     wspolne = (StanStatku*)shmat(shmid, NULL, 0);
     if (wspolne != (void*)-1) {
         printf("RAPORT KONCOWY\n");
+        printf("Wygenerowano %d pasazerow\n", wygenerowano);
         printf("Liczba rejsów: %d/%d\n", wspolne->liczba_rejsow, R);
         printf("Pasazerowie przewiezieni:\n");
         printf("  - z Wawelu: %d\n", wspolne->total_pasazerow_wawel);

@@ -193,23 +193,25 @@ int main() {
             //Zaladunek sie skonczyl czekaj na nastepny
             continue;
         }
-        sem_signal(semid, SEM_MUTEX);
         
         //Jesli ma rower, rezerwuj miejsce na rower
         if (ma_rower) {
-            if (sem_trywait(semid, SEM_STATEK_ROWERY) == -1) {
+            int wolne_rowery = semctl(semid, SEM_STATEK_ROWERY, GETVAL);
+            if (wolne_rowery <= 0) {
                 //Brak miejsca na rower zwolnij miejsce na ludzi i czekaj
-                sem_signal(semid, SEM_STATEK_LUDZIE);
-                
-                sem_wait(semid, SEM_MUTEX);
                 ostatni_rejs_proba = wspolne->rejs_id;
                 sem_signal(semid, SEM_MUTEX);
+                sem_signal(semid, SEM_STATEK_LUDZIE);
                 
                 printf(RED "[PASAZER %d]" RESET "Brak miejsca na rower - czekam na nastepny rejs\n", moj_pid);
                 fflush(stdout);
-                //Musze poczekac na nastepny cykl zaladunku
+                //Musi poczekac na nastepny cykl zaladunku
                 continue;
             }
+            sem_signal(semid, SEM_MUTEX);
+            sem_wait(semid, SEM_STATEK_ROWERY);
+        } else {
+            sem_signal(semid, SEM_MUTEX);
         }
         
         //Rezerwuj miejsce na mostku

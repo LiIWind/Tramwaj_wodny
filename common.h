@@ -123,9 +123,15 @@ static inline int sem_signal(int semid, int sem_num) {
     return sem_op(semid, sem_num, 1, 0);
 }
 
-//Zajmij zasób - nieblokująco
-static inline int sem_trywait(int semid, int sem_num) {
-    return sem_op(semid, sem_num, -1, IPC_NOWAIT);
+//Zeruj semafror
+static inline int sem_reset(int semid, int sem_num, int value) {
+    if (semctl(semid, sem_num, SETVAL, value) == -1) {
+        if (errno != EIDRM && errno != EINVAL) {
+            perror("sem_reset");
+        }
+        return -1;
+    }
+    return 0;
 }
 
 //Zajmij wiele jednostek
