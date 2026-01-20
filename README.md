@@ -416,6 +416,7 @@ for (int sekunda = 0; sekunda < T1; sekunda++) {
 
 ### 6.1 **Test nr. 1**
 Opuszczanie mostka od ostatniego w kolejce
+
 Oczekiwanie: Pasażerowie będący na mostku po skończonym załadunku opuszczają go od ostatniego
 
 Wynik: Sukces
@@ -424,6 +425,7 @@ Wynik: Sukces
 
 ### 6.2 **Test nr. 2**
 Test sygnału do wcześniejszego odpłynięcia
+
 Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, wypchnie pasażerów z mostka od ostatniego i rozpocznie rejs
 
 Wynik: Sukces
@@ -432,6 +434,7 @@ Wynik: Sukces
 
 ### 6.3 **Test nr. 3**
 Test sygnału do zakończenia pracy podczas załadunku
+
 Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, a pasażerowie opuszczą statek, a następnie kapitan oraz dyspozytor zakończą pracę
 
 Wynik: Sukces
@@ -440,6 +443,7 @@ Wynik: Sukces
 
 ### 6.4 **Test nr. 4**
 Test sygnału do zakończenia pracy podczas rejsu
+
 Oczekiwanie: Dyspozytor wyśle sygnał do końca pracy podczas rejsu, a kapitan dokończy rejs i po rozładunku zakończy pracę
 
 Wynik: Sukces
@@ -449,6 +453,7 @@ Wynik: Sukces
 ### 6.5 **Test nr. 5**
 Test miejsc rowerów
 Założenia: miejsca na rowery (M) ustawione na 1
+
 Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie znajduję się rower i wysyła komunikat `Brak miejsca na rower - czekam na nastepny rejs`
 
 Wynik: Sukces
