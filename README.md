@@ -460,6 +460,8 @@ Wynik: Sukces
 
 ![test_rower](img/test_rower.png)
 
+**Wszystkie testy przebiegły pomyślnie**
+
 ---
 
 ## 7. Co udało się zrealizować
