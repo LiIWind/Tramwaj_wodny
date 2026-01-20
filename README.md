@@ -2,6 +2,7 @@
 
 **Autor** Paweł Drabik  
 **Numer albumu** 155171  
+**Repozytorium Github:** [https://github.com/LiIWind/Tramwaj_wodny]  
 
 ---
 
@@ -254,17 +255,174 @@ Główna pętla kapitana:
 
 ---
 
-## 5. Testy
+## 5. Sekcje krytyczne kodu
 
-### 5.1 **Test nr. 1**
+### 5.1 Dostęp do pamięci dzielonej
+
+Każdy dostęp do pamięci dzielonej jest chroniony semaforem `SEM_MUTEX`:
+
+```c
+// common.h - Implementacja operacji semaforowych
+static inline int sem_wait(int semid, int sem_num) {
+    return sem_op(semid, sem_num, -1, 0);  //czekaj
+}
+
+static inline int sem_signal(int semid, int sem_num) {
+    return sem_op(semid, sem_num, 1, 0);   //sygnalizuj
+}
+
+// Przykład użycia w pasazer.c - wejście na statek
+sem_wait(semid, SEM_MUTEX);               //POCZĄTEK SEKCJI KRYTYCZNEJ
+usun_z_kolejki(wspolne, moj_pid);
+wspolne->pasazerow_czekajacych_na_wejscie--;
+wspolne->pasazerowie_na_statku++;
+if (ma_rower) wspolne->rowery_na_statku++;
+int na_statku = wspolne->pasazerowie_na_statku;
+int rowerow = wspolne->rowery_na_statku;
+sem_signal(semid, SEM_MUTEX);             //KONIEC SEKCJI KRYTYCZNEJ
+```
+
+**Wyjaśnienie:** semafor `SEM_MUTEX` jest inizjalizowany wartością 1. Operacja `sem_wait` zmniejsza wartość semafora - jeśli wynik jest ujemny to proces jest blokowany. Operacja `sem_signal` zwiększa wartość semafora i ewentualnie budzi oczekujący proces.
+
+### 5.2 Zarządzenie kolejką na mostku
+
+Dodawanie i odejmowanie pasażerów z kolejki na mostku jest kluczowe, aby zachować spójność:
+
+```c
+// pasazer.c - Dodanie pasazera do kolejki na mostku
+static int dodaj_do_kolejki(StanStatku *wspolne, pid_t pid, int ma_rower) {
+    if (wspolne->liczba_na_mostku >= MAX_PASAZEROW_MOSTEK) {
+        return -1;
+    }
+    
+    int idx = wspolne->liczba_na_mostku;
+    wspolne->kolejka_mostek[idx].pid = pid;
+    wspolne->kolejka_mostek[idx].ma_rower = ma_rower;
+    wspolne->kolejka_mostek[idx].rozmiar = ma_rower ? 2 : 1;
+    wspolne->liczba_na_mostku++;
+    wspolne->miejsca_zajete_mostek += (ma_rower ? 2 : 1);
+    
+    return idx;
+}
+```
+
+**Wyjaśnienie:** funkcja ta jest zawsze wywoływana wewnątrz sekcji krytycznej chronionej przez `SEM_MUTEX`, pozwala to na zapewnienie, że tylko jeden proces może modyfikować strukturę kolejki.
+
+### 5.3 Wypychanie pasażerów z mostka
+
+Algorytm wypychania pasażerów z mostka wymaga atomowej modyfikacji wielu zmiennych:
+
+```c
+// kapitan.c - Wypychanie pasażerów
+void wypchnij_z_mostka(int semid, StanStatku *wspolne) {
+    int liczba = wspolne->liczba_na_mostku;
+    
+    if (liczba == 0) return;
+    
+    wspolne->wypychanie_aktywne = 1;  // Flaga blokująca nowych pasażerów
+    wspolne->liczba_wypchnietych = 0;
+    
+    // Wypychanie od ostatniego (LIFO)
+    for (int i = liczba - 1; i >= 0; i--) {
+        PasazerInfo *p = &wspolne->kolejka_mostek[i];
+        
+        // Dodaj do listy wypchniętych
+        wspolne->wypchnieci[wspolne->liczba_wypchnietych++] = p->pid;
+        
+        // Wyślij sygnał do pasażera
+        kill(p->pid, SIGUSR1);
+        
+        // Zwolnij zasoby
+        sem_signal_n(semid, SEM_MOSTEK, p->rozmiar);
+        wspolne->miejsca_zajete_mostek -= p->rozmiar;
+        sem_signal(semid, SEM_STATEK_LUDZIE);
+        if (p->ma_rower) sem_signal(semid, SEM_STATEK_ROWERY);
+        
+        // Obudź pasażera
+        sem_signal(semid, SEM_WEJSCIE);
+    }
+    
+    wspolne->liczba_na_mostku = 0;
+    wspolne->miejsca_zajete_mostek = 0;
+    wspolne->wypychanie_aktywne = 0;
+}
+```
+
+**Wyjaśnienie:** 
+- Flaga `wypychanie_aktywne` zapobiega wchodzeniu nowych pasażerów podczas wypychania
+- Lista `wypchnieci[]` pozwala pasażerom sprawdzić czy zostali wypchnięci
+
+### 5.4 Synchronizacja rozładunku
+
+Ostatni pasażer schodzący ze statku powiadamia kapitana:
+
+```c
+// pasazer.c - Schodzenie ze statku
+sem_wait(semid, SEM_MUTEX);
+wspolne->pasazerowie_na_statku--;
+if (ma_rower) wspolne->rowery_na_statku--;
+wspolne->pasazerow_do_rozladunku--;
+
+int ostatni = (wspolne->pasazerow_do_rozladunku == 0);  // Sprawdzenie atomowe
+int nowy_przystanek = wspolne->aktualny_przystanek;
+sem_signal(semid, SEM_MUTEX);
+
+// ... zwalnianie zasobów ...
+
+// Jeśli ostatni - powiadom kapitana
+if (ostatni) {
+    sem_signal(semid, SEM_ROZLADUNEK_KONIEC);
+}
+```
+**Wyjaśnienie:** Sprawdzenie czy pasażer jest ostatni musi być atomowe i odbywać się wewnątrz sekcji krytycznej. W innym przypadku dwóch pasażerów mogłoby uznać się za ostatnich.
+
+### 5.5 Obsługa sygnałów
+
+Handlery sygnałów używają `volatile sig_atomic_t` dla bezpiecznej komunikacji:
+
+```c
+// kapitan.c
+static volatile sig_atomic_t wczesniejszy_odjazd = 0;
+static volatile sig_atomic_t koniec_pracy = 0;
+
+void sigusr1_handler(int sig) {
+    (void)sig;
+    wczesniejszy_odjazd = 1;  // Atomowa operacja zapisu
+}
+
+void sigusr2_handler(int sig) {
+    (void)sig;
+    koniec_pracy = 1;
+}
+
+// W głównej pętli:
+for (int sekunda = 0; sekunda < T1; sekunda++) {
+    if (wczesniejszy_odjazd) {  // Atomowy odczyt
+        // Przerwij załadunek
+        break;
+    }
+    // ...
+}
+```
+
+**Wyjaśnienie:**
+- `volatile` zapobiega optymalizacji przez kompilator
+- `sig_atomic_t` gwarantuje atomowy zapis/odczyt w kontekście obsługi sygnałów
+- Handler sygnału może być wywołany asynchronicznie, więc musi być bezpieczny
+
+---
+
+## 6. Testy
+
+### 6.1 **Test nr. 1**
 Opuszczanie mostka od ostatniego w kolejce
 Oczekiwanie: Pasażerowie będący na mostku po skończonym załadunku opuszczają go od ostatniego
 
 Wynik: Sukces
 
-![test_mostek](test_mostek.png)
+![test_mostek](img/test_mostek.png)
 
-### 5.2 **Test nr. 2**
+### 6.2 **Test nr. 2**
 Test sygnału do wcześniejszego odpłynięcia
 Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, wypchnie pasażerów z mostka od ostatniego i rozpocznie rejs
 
@@ -272,7 +430,7 @@ Wynik: Sukces
 
 ![test_sigusr1](img/test_sigusr1.png)
 
-### 5.3 **Test nr. 3**
+### 6.3 **Test nr. 3**
 Test sygnału do zakończenia pracy podczas załadunku
 Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, a pasażerowie opuszczą statek, a następnie kapitan oraz dyspozytor zakończą pracę
 
@@ -280,7 +438,7 @@ Wynik: Sukces
 
 ![test_sigusr2_zaladunek](img/test_sigusr2.png)
 
-### 5.4 **Test nr. 5**
+### 6.4 **Test nr. 5**
 Test sygnału do zakończenia pracy podczas rejsu
 Oczekiwanie: Dyspozytor wyśle sygnał do końca pracy podczas rejsu, a kapitan dokończy rejs i po rozładunku zakończy pracę
 
@@ -288,7 +446,7 @@ Wynik: Sukces
 
 ![test_sigusr2_rejs](img/test_sigusr2_rejs.png)
 
-### 5.5 **Test nr. 4**
+### 6.5 **Test nr. 4**
 Test miejsc rowerów
 Założenia: miejsca na rowery (M) ustawione na 1
 Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie znajduję się rower i wysyła komunikat `Brak miejsca na rower - czekam na nastepny rejs`
@@ -296,3 +454,131 @@ Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie
 Wynik: Sukces
 
 ![test_rower](img/test_rower.png)
+
+---
+
+## 6. Co udało się zrealizować
+
+### 6.1 Zrealizowane funkcjonalności
+
+- ✅ Pełna implementacja symulacji tramwaju wodnego zgodna ze specyfikacją
+- ✅ Wieloprocesowa architektura z użyciem fork() i exec()
+- ✅ Synchronizacja procesów z użyciem semaforów
+- ✅ Pamięć dzielona do wymiany danych między procesami
+- ✅ Obsługa sygnałów SIGUSR1, SIGUSR2, SIGTERM, SIGINT
+- ✅ Poprawne wypychanie pasażerów z mostka od ostatniego w kolejce
+- ✅ Zarządzanie miejscami na rowery
+- ✅ System logowania z synchronizacją dostępu
+- ✅ Walidacja parametrów wejściowych
+- ✅ Raport końcowy z statystykami
+- ✅ Czyszczenie zasobów IPC przy zakończeniu
+
+### 6.2 Elementy wyróżniające
+
+- **Kolorowe wyjścia w terminalu** - procesy kapitana, dyspozytora oraz pasażera są wyraźnie rozróżnialne
+- **System logowania** - zdarzenia są zapisywane do pliku .log z timestampami
+
+---
+
+## 7. Napotkane problemy
+
+### 7.1 Procesy zombie
+Duża liczba procesów pasażerów (10000) powodowała gromadzenie się zombie.
+
+**Rozwiązanie:** Implementacja aktywnego zbierania zombie przez `waitpid(WNOHANG)` co 100 pasażerów oraz handler `SIGCHLD`.
+
+### 7.2 Problem przy sprawdzaniu ostatniego pasażera
+Dwóch pasażerów mogło uznać się za ostatniego schodzącego ze statku.
+
+**Rozwiązanie:** Dodaniew sprawdzenia `pasazerow_do_rozladunku == 0` do wnętrza sekcji krytycznej.
+
+---
+
+## 8. Linki do fragmentów kodu
+
+### 8.1 Tworzenie i obsługa plików (open(), close(), read(), write(), unlink())
+
+| Funkcja | Plik | Link |
+|---------|------|------|
+| fopen() - otwarcie pliku log | logger.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/logger.c#L60-L65) |
+| fclose() - zamknięcie pliku log | logger.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/logger.c#L77-L82) |
+| fprintf() - zapis do pliku | logger.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/logger.c#L68-L75) |
+| unlink() - usunięcie pliku | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L517) |
+| fopen/fscanf/fclose - plik konfiguracji | common.h | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/common.h#L283-L296) |
+
+### 8.2 Tworzenie i obsługa procesów (fork(), exec(), exit(), wait())
+
+| Funkcja | Plik | Link |
+|---------|------|------|
+| fork() - tworzenie kapitana | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L232-L239) |
+| fork() - tworzenie dyspozytora | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L253-L261) |
+| fork() - tworzenie pasażerów | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L306-L316) |
+| execl() - uruchomienie kapitana | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L241-L246) |
+| waitpid() - czekanie na procesy | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L385-L388) |
+| exit() - zakończenie procesu | pasazer.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/pasazer.c#L117) |
+
+### 8.3 Obsługa sygnałów (kill(), signal(), sigaction())
+
+| Funkcja | Plik | Link |
+|---------|------|------|
+| sigaction() - rejestracja handlerów | kapitan.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/kapitan.c#L129-L132) |
+| kill() - wysyłanie SIGUSR1 | dyspozytor.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/dyspozytor.c#L120) |
+| kill() - wysyłanie SIGUSR2 | dyspozytor.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/dyspozytor.c#L135) |
+| kill() - wypychanie pasażera | kapitan.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/kapitan.c#L56) |
+| signal() - ignorowanie SIGTERM | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L349) |
+
+### 8.4 Synchronizacja procesów (ftok(), semget(), semctl(), semop())
+
+| Funkcja | Plik | Link |
+|---------|------|------|
+| ftok() - generowanie klucza | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L170-L176) |
+| semget() - tworzenie semaforów | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L201-L208) |
+| semctl(SETVAL) - inicjalizacja | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L213-L224) |
+| semctl(IPC_RMID) - usuwanie | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L505-L509) |
+| semop() - operacje P/V | common.h | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/common.h#L106-L114) |
+
+### 8.5 Segmenty pamięci dzielonej (ftok(), shmget(), shmat(), shmdt(), shmctl())
+
+| Funkcja | Plik | Link |
+|---------|------|------|
+| shmget() - tworzenie segmentu | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L178-L184) |
+| shmat() - przyłączenie segmentu | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L186-L193) |
+| shmdt() - odłączenie segmentu | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L199) |
+| shmctl(IPC_RMID) - usuwanie | main.c | [Link do kodu](https://github.com/LiIWind/Tramwaj_wodny/blob/0eb86a31e0e19a0be8b32e0b8de762fd9925da32/main.c#L511-L515) |
+
+---
+
+## 9. Struktura plików
+
+```
+tramwaj_wodny/
+├── common.h           # Definicje struktur, stałych, funkcji pomocniczych
+├── logger.h           # Nagłówek modułu logowania
+├── logger.c           # Implementacja systemu logowania
+├── main.c             # Proces główny
+├── kapitan.c          # Proces kapitana
+├── dyspozytor.c       # Proces dyspozytora
+├── pasazer.c          # Proces pasażera
+├── Makefile           # Plik kompilacji
+├── README.md          # Dokumentacja projektu
+├── img/               # Screenshoty z testów
+│   ├── schemat.png
+│   ├── test_mostek.png
+│   ├── test_sigusr1.png
+│   ├── test_sigusr2.png
+│   ├── test_sigusr2_rejs.png
+│   └── test_rower.png
+└── tramwaj_wodny.log  # Plik logu (generowany podczas działania)
+```
+
+---
+
+### 10. Podsumowanie
+
+Projekt tematu nr. 11 "Tramwaj wodny" zrealizowany zgodnie ze specyfikacją oraz wymaganiami projektowymi.
+Zaimplementowano wszystkie wymagane funkcjonalności tj.:
+- Wieloprocesowa symulacjia z użyciem fork() i exec()
+- Synchronizacja za pomocą semaforów
+- Komunikacja poprzez pamięć dzieloną
+- Obsługa sygnałów
+- Prawidłowe czyszczenie zasobów IPC
