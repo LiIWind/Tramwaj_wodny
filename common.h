@@ -192,6 +192,10 @@ static inline int waliduj_parametry(void) {
         fprintf(stderr, "Blad: wszystkie parametry musza byc wieksze od 0\n");
         return -1;
     }
+    if (K > MAX_PASAZEROW_MOSTEK) {
+        fprintf(stderr, "Blad: pojemnosc mostka K (%d) nie moze przekraczac %d\n", K, MAX_PASAZEROW_MOSTEK);
+        return -1;
+    }
     return 0;
 }
 

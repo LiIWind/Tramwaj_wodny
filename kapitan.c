@@ -387,7 +387,7 @@ int main() {
     printf(BLUE "[KAPITAN]" RESET "Budze oczekujacych pasazerow...\n");
     fflush(stdout);
     
-    for (int i = 0; i < 200; i++) {
+    for (int i = 0; i < 10000; i++) {
         sem_signal(semid, SEM_ZALADUNEK_WAWEL);
         sem_signal(semid, SEM_ZALADUNEK_TYNIEC);
         sem_signal(semid, SEM_WEJSCIE);
