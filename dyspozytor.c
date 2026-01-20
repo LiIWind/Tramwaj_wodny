@@ -116,7 +116,7 @@ int main() {
         
         
         //SIGUSR1 - wczesniejszy odjazd po 2 rejsach, podczas zaladunku
-        if (rejsow >= 2 && !wyslalem_sigusr1 && status == STATUS_ZALADUNEK) {
+        if (rejsow >= 3 && !wyslalem_sigusr1 && status == STATUS_ZALADUNEK) {
             if (kill(pid_kapitan, SIGUSR1) == 0) {
                 logger_sygnal("SIGUSR1 (wczesniejszy odjazd)", getpid(), pid_kapitan);
                 logger_log(LOG_INFO, EVENT_SYGNAL_ODPLYNIECIE,
@@ -131,7 +131,7 @@ int main() {
         }
         
         //SIGUSR2 - koniec pracy po 75% rejsow
-        if (rejsow >= (R * 3 / 4) && !wyslalem_sigusr2) {
+        if (rejsow >= (R * 3 / 4) && !wyslalem_sigusr2 /*&& status == STATUS_ZALADUNEK*/) {
             if (kill(pid_kapitan, SIGUSR2) == 0) {
                 logger_sygnal("SIGUSR2 (koniec pracy)", getpid(), pid_kapitan);
                 logger_log(LOG_INFO, EVENT_SYGNAL_KONIEC_PRACY,
