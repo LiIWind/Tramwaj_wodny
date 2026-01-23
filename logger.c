@@ -23,11 +23,8 @@ void logger_set_semid(int semid) {
 
 const char* get_log_level_name(LogLevel level) {
     switch(level) {
-        case LOG_DEBUG: return "DEBUG";
         case LOG_INFO: return "INFO";
-        case LOG_WARNING: return "WARNING";
         case LOG_ERROR: return "ERROR";
-        case LOG_CRITICAL: return "CRITICAL";
         default: return "UNKNOWN";
     }
 }

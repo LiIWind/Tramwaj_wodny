@@ -11,11 +11,8 @@
 #include <errno.h>
 
 typedef enum {
-    LOG_DEBUG,
     LOG_INFO,
-    LOG_WARNING,
     LOG_ERROR,
-    LOG_CRITICAL
 } LogLevel;
 
 typedef enum {

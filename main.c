@@ -287,8 +287,8 @@ int main() {
     }
     
     for (int i = 0; i < liczba_pasazerow && !cleanup_flag; i++) {
-        //Aktywne zbieranie zombie co 100 pasażerów
-        if (i % 100 == 0) {
+        //Aktywne zbieranie zombie co 10 pasażerów
+        if (i % 10 == 0) {
             zbierz_zombie();
         }
         
@@ -302,7 +302,7 @@ int main() {
             break;
         }
         
-        logger_close();
+        //logger_close();
         pid_t pid = fork();
         if (pid == -1) {
             perror("Blad fork pasazera");
@@ -316,7 +316,8 @@ int main() {
         }
         
         if (pid == 0) {
-            signal(SIGCHLD, SIG_DFL);
+            logger_close();
+	    signal(SIGCHLD, SIG_DFL);
             execl("./pasazer", "pasazer", NULL);
             perror("Blad execl pasazera");
             exit(1);

@@ -50,7 +50,7 @@ extern int R;  // Maksymalna liczba rejsow
 #define STATUS_ROZLADUNEK  2
 #define STATUS_STOP        3
 
-#define MAX_PASAZEROW_MOSTEK 200
+#define MAX_PASAZEROW_MOSTEK 1000
 
 #define RED "\033[31m"
 #define GREEN "\033[32m"
@@ -221,8 +221,8 @@ static inline int wczytaj_parametry(void) {
             while (getchar() != '\n');
             continue;
         }
-        if (N < 1) fprintf(stderr, "Blad: wartosc musi byc wieksza od 0\n");
-    } while (N < 1);
+        if (N <= 1) fprintf(stderr, "Blad: wartosc musi byc wieksza od 1\n");
+    } while (N <= 1);
 
     do {
         printf("Miejsca na rowery M (< %d): ", N);

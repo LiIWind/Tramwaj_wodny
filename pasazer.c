@@ -65,7 +65,8 @@ int main() {
     int ma_rower = (rand() % 100) < 30 ? 1 : 0;  //30% szans na rower
     int rozmiar = ma_rower ? 2 : 1;
     int moj_przystanek = (rand() % 2) ? PRZYSTANEK_WAWEL : PRZYSTANEK_TYNIEC; //50% szans na przystanek
-    
+    //int moj_przystanek = PRZYSTANEK_WAWEL;
+
     if (wczytaj_parametry_z_pliku() == -1) {
         fprintf(stderr, RED "[Pasazer]" RESET "- blad wczytywania parametrow\n");
         exit(1);
