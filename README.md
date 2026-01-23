@@ -417,6 +417,8 @@ for (int sekunda = 0; sekunda < T1; sekunda++) {
 ### 6.1 **Test nr. 1**
 Opuszczanie mostka od ostatniego w kolejce
 
+Założenia: Dowolne parametry
+
 Oczekiwanie: Pasażerowie będący na mostku po skończonym załadunku opuszczają go od ostatniego
 
 Wynik: Sukces
@@ -426,6 +428,8 @@ Wynik: Sukces
 ### 6.2 **Test nr. 2**
 Test sygnału do wcześniejszego odpłynięcia
 
+Założenia: `R` > 4
+
 Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, wypchnie pasażerów z mostka od ostatniego i rozpocznie rejs
 
 Wynik: Sukces
@@ -433,16 +437,9 @@ Wynik: Sukces
 ![test_sigusr1](img/test_sigusr1.png)
 
 ### 6.3 **Test nr. 3**
-Test sygnału do zakończenia pracy podczas załadunku
-
-Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, a pasażerowie opuszczą statek, a następnie kapitan oraz dyspozytor zakończą pracę
-
-Wynik: Sukces
-
-![test_sigusr2_zaladunek](img/test_sigusr2.png)
-
-### 6.4 **Test nr. 4**
 Test sygnału do zakończenia pracy podczas rejsu
+
+Założenia: `R` > 4
 
 Oczekiwanie: Dyspozytor wyśle sygnał do końca pracy podczas rejsu, a kapitan dokończy rejs i po rozładunku zakończy pracę
 
@@ -450,15 +447,38 @@ Wynik: Sukces
 
 ![test_sigusr2_rejs](img/test_sigusr2_rejs.png)
 
+### 6.4 **Test nr. 4**
+Test sygnału do zakończenia pracy podczas załadunku
+
+Założenia: `R` > 4 oraz odkomentować w dyspozytor.c [`&& status == STATUS_ZALADUNEK`](https://github.com/LiIWind/Tramwaj_wodny/blob/b1aaed87d1d29fb48ff553e8f1c43850a4d27c1f/dyspozytor.c#L134)
+
+Oczekiwanie: Kapitan po otrzymaniu sygnału przerwie załadunek, a pasażerowie opuszczą statek, a następnie kapitan oraz dyspozytor zakończą pracę
+
+Wynik: Sukces
+
+![test_sigusr2_zaladunek](img/test_sigusr2.png)
+
 ### 6.5 **Test nr. 5**
 Test miejsc rowerów
-Założenia: miejsca na rowery (M) ustawione na 1
+
+Założenia: Miejsca na rowery (M) ustawione na 1
 
 Oczekiwanie: Pasażer z rowerem próbuję wejść na statek na którym aktualnie znajduję się rower i wysyła komunikat `Brak miejsca na rower - czekam na nastepny rejs`
 
 Wynik: Sukces
 
 ![test_rower](img/test_rower.png)
+
+### 6.6 **Test nr. 6**
+Wszyscy pasażerowie z Wawelu
+
+Założenia: Parametry dowolne, zakomentować w pasazer.c [`int moj_przystanek = (rand() % 2) ? PRZYSTANEK_WAWEL : PRZYSTANEK_TYNIEC;`](https://github.com/LiIWind/Tramwaj_wodny/blob/f67e833f79d373b83068b545add52123380effbc/pasazer.c#L67) oraz odkomentować [`int moj_przystanek = PRZYSTANEK_WAWEL;`](https://github.com/LiIWind/Tramwaj_wodny/blob/f67e833f79d373b83068b545add52123380effbc/pasazer.c#L68)
+
+Oczekiwanie: W raporcie końcowym liczba pasażerów przewieźionych z Tyńca wyniesie 0
+
+Wynik: Sukces
+
+![test_wawel](img/test_wawel.png)
 
 **Wszystkie testy przebiegły pomyślnie**
 
