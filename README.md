@@ -29,7 +29,17 @@ przystanku w Tyńcu lub w Krakowie.
 
 ## 2 Założenia projektowe
 
-### 2.1 Założenia zadania
+### 2.1 Kompilacja
+
+```c
+make clean
+
+make
+
+./main
+```
+
+### 2.2 Założenia zadania
 - Pasażerowie przybywają na przystanki Wawel lub Tyniec losowo (50% szans)
 - Pasażer może mieć rower (30% szans)
 - Na tramwaj może wejść maksymalnie N pasażerów
@@ -43,7 +53,7 @@ przystanku w Tyńcu lub w Krakowie.
 - Tramwaj kursuje na trasie Kraków Wawel - Tyniec
 - Mostek jest jednokierunkowy
 
-### 2.2 Architektura systemu
+### 2.3 Architektura systemu
 System oparty jest na architekturze wieloprocesowej z następującymi procesami:
 - Main - Proces główny - tworzy zasoby IPC oraz uruchamia pozostałe procesy
 - Kapitan - Zarządza statkiem, załadunkiem oraz rozładunkiem pasażerów
@@ -52,7 +62,7 @@ System oparty jest na architekturze wieloprocesowej z następującymi procesami:
 
 ![schemat](img/schemat.png)
 
-### 2.3 Parametry systemu
+### 2.4 Parametry systemu
 Następujące parametry są wprowadzane przez użytkownika:
 - **N** - Pojemność tramwaju (maksymalna liczba pasażerów)
 - **M** - Liczba miejsc na rowery (M < N)
@@ -61,14 +71,14 @@ Następujące parametry są wprowadzane przez użytkownika:
 - **T2** - Czas rejsu w sekundach
 - **R** - Maksymalna liczba rejsów
 
-### 2.4 Walidacja danych
+### 2.5 Walidacja danych
 Wszystkie wprowadzane parametry są walidowane:
 - Wartości muszą być większe od 0
 - M musi być mniejsze od N
 - K musi być mniejsze od N
 - Nieprawidłowe dane powodują wyświetlenie komunikatu błędu i ponowne zapytanie
 
-### 2.5 Pliki projektu
+### 2.6 Pliki projektu
 
 | Plik | Opis |
 |------|------|
